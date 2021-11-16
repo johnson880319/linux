@@ -1708,8 +1708,10 @@ int kvm_arch_init(void *opaque)
 
 	if (in_hyp_mode)
 		kvm_info("VHE mode initialized successfully\n");
-	else
+	else{
 		kvm_info("Hyp mode initialized successfully\n");
+		printk("this is my KVM r10922166\n");
+	}
 
 	return 0;
 

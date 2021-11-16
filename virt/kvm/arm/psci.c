@@ -387,6 +387,13 @@ static int kvm_psci_call(struct kvm_vcpu *vcpu)
 	};
 }
 
+unsigned long host_cpuid(void) {
+	unsigned long cpuid;
+	
+	cpuid = smp_processor_id();
+	return cpuid;
+}
+
 int kvm_hvc_call_handler(struct kvm_vcpu *vcpu)
 {
 	u32 func_id = smccc_get_function(vcpu);
@@ -428,6 +435,8 @@ int kvm_hvc_call_handler(struct kvm_vcpu *vcpu)
 			break;
 		}
 		break;
+	case ARM_SMCCC_GET_PCPU_ID:
+		val = host_cpuid();
 	default:
 		return kvm_psci_call(vcpu);
 	}
