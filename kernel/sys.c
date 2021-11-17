@@ -2656,10 +2656,14 @@ SYSCALL_DEFINE0(host_cpuid)
 	
 	printk(KERN_ALERT "syscall host_cpuid called\n");
 
+	preempt_disable();
+	
 	asm volatile(
 		"svc #2\n\t"
 		"mov %[result], x0"
 		: [result] "=r" (cpuid)
 	);
+
+	preempt_enable();
 	return cpuid;
 }
