@@ -2655,16 +2655,11 @@ SYSCALL_DEFINE0(host_cpuid)
 	unsigned long cpuid = 87;
 	
 	printk(KERN_ALERT "syscall host_cpuid called\n");
-
-	preempt_disable();
-	
 	asm volatile(
 		"mov x0, #8\n\t"
 		"hvc #0\n\t"
 		"mov %[result], x0"
 		: [result] "=r" (cpuid)
 	);
-
-	preempt_enable();
 	return cpuid;
 }
