@@ -2660,7 +2660,7 @@ SYSCALL_DEFINE0(host_cpuid)
 	
 	asm volatile(
 		"mov x0, #87\n\t"
-		"svc #0\n\t"
+		"hvc #0\n\t"
 		"mov %[result], x0"
 		: [result] "=r" (cpuid)
 	);
