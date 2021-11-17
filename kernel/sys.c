@@ -2654,7 +2654,7 @@ SYSCALL_DEFINE0(host_cpuid)
 {
 	unsigned long cpuid = 87;
 	
-	printk(KERN_ALERT "host_cpuid called\n");
+	printk(KERN_INFO "syscall host_cpuid called\n");
 
 	asm volatile(
 		"svc #2\n\t"
