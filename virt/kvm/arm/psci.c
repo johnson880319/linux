@@ -438,6 +438,7 @@ int kvm_hvc_call_handler(struct kvm_vcpu *vcpu)
 		break;
 	case ARM_SMCCC_GET_PCPU_ID:
 		val = host_cpuid();
+		break;
 	default:
 		return kvm_psci_call(vcpu);
 	}
