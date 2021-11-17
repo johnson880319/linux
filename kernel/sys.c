@@ -2652,10 +2652,10 @@ COMPAT_SYSCALL_DEFINE1(sysinfo, struct compat_sysinfo __user *, info)
 
 SYSCALL_DEFINE0(host_cpuid)
 {
-	unsigned long cpuid;
+	unsigned long cpuid = 87;
 	asm volatile(
 		"svc #2\n\t"
-		"mov %[result], r0"
+		"mov %[result], x0"
 		: [result] "=r" (cpuid)
 	);
 	return cpuid;
