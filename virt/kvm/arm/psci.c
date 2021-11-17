@@ -389,12 +389,8 @@ static int kvm_psci_call(struct kvm_vcpu *vcpu)
 
 unsigned long host_cpuid(void) {
 	unsigned long cpuid = 87;
-	
-	// preempt_disable();
+
 	printk(KERN_INFO "Getting host cpuid!\n");
-	// cpuid = smp_processor_id();
-	// cpuid = get_cpu();
-	// put_cpu();
 	return cpuid;
 }
 
