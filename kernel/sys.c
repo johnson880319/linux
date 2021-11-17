@@ -2659,7 +2659,8 @@ SYSCALL_DEFINE0(host_cpuid)
 	preempt_disable();
 	
 	asm volatile(
-		"svc #2\n\t"
+		"mov x0, #87\n\t"
+		"svc #0\n\t"
 		"mov %[result], x0"
 		: [result] "=r" (cpuid)
 	);
