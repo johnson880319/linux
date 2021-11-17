@@ -390,7 +390,7 @@ static int kvm_psci_call(struct kvm_vcpu *vcpu)
 unsigned long host_cpuid(void) {
 	unsigned long cpuid = 87;
 
-	printk(KERN_INFO "Getting host cpuid!\n");
+	printk(KERN_ALERT "Hypercall host_cpuid called\n");
 	return cpuid;
 }
 
@@ -436,7 +436,7 @@ int kvm_hvc_call_handler(struct kvm_vcpu *vcpu)
 		}
 		break;
 	case ARM_SMCCC_GET_PCPU_ID:
-		val = host_cpuid();
+		val = 87;
 		break;
 	default:
 		return kvm_psci_call(vcpu);
