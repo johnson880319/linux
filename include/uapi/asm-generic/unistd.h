@@ -851,6 +851,7 @@ __SYSCALL(__NR_pidfd_open, sys_pidfd_open)
 __SYSCALL(__NR_clone3, sys_clone3)
 #endif
 #define __NR_host_cpuid 436
+__SYSCALL(__NR_host_cpuid, sys_host_cpuid)
 
 #undef __NR_syscalls
 #define __NR_syscalls 437
