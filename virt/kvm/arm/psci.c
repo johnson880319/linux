@@ -393,6 +393,7 @@ unsigned long host_cpuid(void) {
 	printk(KERN_ALERT "Hypercall host_cpuid called\n");
 	preempt_disable();
 	cpuid = smp_processor_id();
+	preempt_enable();
 	return cpuid;
 }
 
