@@ -2652,8 +2652,5 @@ COMPAT_SYSCALL_DEFINE1(sysinfo, struct compat_sysinfo __user *, info)
 
 SYSCALL_DEFINE0(get_cpuid)
 {
-	long cpuid;
-
-	cpuid = raw_smp_processor_id();
-	return cpuid;
+	return raw_smp_processor_id();
 }
