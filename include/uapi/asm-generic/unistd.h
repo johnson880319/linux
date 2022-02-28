@@ -850,7 +850,6 @@ __SYSCALL(__NR_pidfd_open, sys_pidfd_open)
 #define __NR_clone3 435
 __SYSCALL(__NR_clone3, sys_clone3)
 #endif
-
 #define __NR_get_cpuid 436
 __SYSCALL(__NR_get_cpuid, sys_get_cpuid)
 
