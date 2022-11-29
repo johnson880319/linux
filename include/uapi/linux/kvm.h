@@ -887,6 +887,14 @@ struct kvm_ppc_resize_hpt {
 #define KVM_GET_EMULATED_CPUID	  _IOWR(KVMIO, 0x09, struct kvm_cpuid2)
 #define KVM_GET_MSR_FEATURE_INDEX_LIST    _IOWR(KVMIO, 0x0a, struct kvm_msr_list)
 
+#define KVM_RR_CTRL               _IO(KVMIO, 0x0b)
+
+struct kvm_rr_ctrl {
+	__u16 enabled;
+	__u16 ctrl;
+	__u32 timer_value;
+};
+
 /*
  * Extension capability list.
  */
