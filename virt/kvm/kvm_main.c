@@ -55,6 +55,7 @@
 
 #include <asm/processor.h>
 #include <asm/ioctl.h>
+#include <asm/logger.h>
 #include <linux/uaccess.h>
 
 #include "coalesced_mmio.h"
@@ -108,6 +109,10 @@ static int kvm_usage_count;
 static atomic_t hardware_enable_failed;
 
 static struct kmem_cache *kvm_vcpu_cache;
+
+/* Record and replay */
+struct kvm_rr_ctrl rr_ctrl;
+EXPORT_SYMBOL_GPL(rr_ctrl);
 
 static __read_mostly struct preempt_ops kvm_preempt_ops;
 static DEFINE_PER_CPU(struct kvm_vcpu *, kvm_running_vcpu);
@@ -4657,6 +4662,8 @@ static long kvm_dev_ioctl(struct file *filp,
 			  unsigned int ioctl, unsigned long arg)
 {
 	long r = -EINVAL;
+	void __user *argp = (void __user *)arg;
+	struct kvm_rr_ctrl rr_ctrl_user;
 
 	switch (ioctl) {
 	case KVM_GET_API_VERSION:
@@ -4668,7 +4675,29 @@ static long kvm_dev_ioctl(struct file *filp,
 		r = kvm_dev_ioctl_create_vm(arg);
 		break;
 	case KVM_RR_CTRL:
-		pr_info("RR: Enabled\n");
+		if (copy_from_user(&rr_ctrl_user, argp, sizeof(rr_ctrl_user))) {
+			r = -EFAULT;
+			break;
+		}
+		r = 0;
+		if (rr_ctrl_user.enabled == 0) {
+			/* Disable recording */
+			rr_ctrl = rr_ctrl_user;
+			printk(KERN_INFO "KVM_RR_CTRL, disabled\n");
+			RR_DLOG(INIT, "KVM_RR_CTRL, disabled");
+		} else {
+			/* Enable recording */
+			if (rr_ctrl.enabled == 0) {
+				rr_ctrl = rr_ctrl_user;
+				printk(KERN_INFO "KVM_RR_CTRL, enabled with "
+				       "ctrl: 0x%x, timer_value: %d\n",
+				       rr_ctrl.ctrl, rr_ctrl.timer_value);
+				RR_DLOG(INIT, "KVM_RR_CTRL, enabled with "
+					"ctrl: 0x%x, timer_value: %d",
+					rr_ctrl.ctrl, rr_ctrl.timer_value);
+			} else
+				r = -EBUSY;
+		}
 		break;
 	case KVM_CHECK_EXTENSION:
 		r = kvm_vm_ioctl_check_extension_generic(NULL, arg);
