@@ -12,6 +12,9 @@
 struct kvm;
 struct kvm_vcpu;
 struct kvm_lapic;
+struct kvm_pgtable_mm_ops;
+
+typedef u64 kvm_pte_t;
 
 /* Macro switches */
 /* Each bit in the bitmap represents one memory page.
@@ -168,12 +171,12 @@ struct rr_ops {
 struct rr_cow_page {
 	struct list_head link;
 	struct hlist_node hlink;
-	gfn_t gfn;
-	pfn_t original_pfn;
-	void *original_addr;
-	pfn_t private_pfn;
-	void *private_addr;
-	u64 *sptep;	/*Pointer of the spte that references this pfn */
+	u64 ipa;
+	u64 *original_addr;
+	u64 original_pa;
+	u64 *private_addr;
+	u64 private_pa;
+	u64 *ptep;	/*Pointer of the spte that references this pa */
 	u64 chunk_num;	/* val of nr_chunk when added to holding_pages */
 	int state;
 };
@@ -192,12 +195,13 @@ int rr_apic_accept_irq(struct kvm_lapic *apic, int delivery_mode,
 void rr_apic_reinsert_irq(struct kvm_vcpu *vcpu);
 void rr_set_mmio_spte_mask(u64 mmio_mask);
 int rr_check_chunk(struct kvm_vcpu *vcpu);
-void rr_memory_cow(struct kvm_vcpu *vcpu, u64 *sptep, pfn_t pfn, gfn_t gfn);
+u64 *rr_memory_cow(struct kvm_vcpu *vcpu, u64 ipa, kvm_pte_t *ptep,
+		  struct kvm_pgtable_mm_ops *mm_ops, u64 *childp);
 void *rr_ept_gfn_to_kaddr(struct kvm_vcpu *vcpu, gfn_t gfn, int write);
 void rr_vcpu_disable(struct kvm_vcpu *vcpu);
 void rr_memory_cow_fast(struct kvm_vcpu *vcpu, u64 *sptep, gfn_t gfn);
 void rr_fix_cow_page(struct rr_cow_page *cow_page, u64 *sptep);
-struct rr_cow_page *rr_check_cow_page(struct rr_vcpu_info *vrr_info, gfn_t gfn);
+struct rr_cow_page *rr_check_cow_page(struct rr_vcpu_info *vrr_info, u64 ipa);
 void rr_trace_vm_exit(struct kvm_vcpu *vcpu);
 
 static inline void rr_make_request(int req, struct rr_vcpu_info *rr_info)

@@ -31,6 +31,8 @@
 #define KVM_SPSR_FIQ	4
 #define KVM_NR_SPSR	5
 
+#define KVM_NR_SYS_REGS 122
+
 #ifndef __ASSEMBLY__
 #include <linux/psci.h>
 #include <linux/types.h>
@@ -56,6 +58,8 @@ struct kvm_regs {
 	__u64	spsr[KVM_NR_SPSR];
 
 	struct user_fpsimd_state fp_regs;
+
+	u64 sys_regs[KVM_NR_SYS_REGS];
 };
 
 /*

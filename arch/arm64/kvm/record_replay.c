@@ -4,6 +4,8 @@
 #include <asm/logger.h>
 // #include <asm/vmx.h>
 #include <asm/checkpoint_rollback.h>
+#include <asm/kvm_pgtable.h>
+#include <asm/kvm_emulate.h>
 
 // #include "mmu.h"
 // #include "lapic.h"
@@ -132,66 +134,66 @@ static int __rr_vcpu_sync(struct kvm_vcpu *vcpu,
 	return ret;
 }
 
-// static void __rr_kvm_enable(struct kvm *kvm);
-// static void __rr_vcpu_enable(struct kvm_vcpu *vcpu);
+static void __rr_kvm_enable(struct kvm *kvm);
+static void __rr_vcpu_enable(struct kvm_vcpu *vcpu);
 
-// static void __rr_kmem_cache_init(void)
-// {
-// 	/* Init kmem_cache */
-// 	if (!rr_cow_page_cache) {
-// 		rr_cow_page_cache = kmem_cache_create("rr_cow_page",
-// 						      sizeof(struct rr_cow_page),
-// 						      0, 0, NULL);
-// 		if (!rr_cow_page_cache) {
-// 			RR_ERR("error: fail to kmem_cache_create() for "
-// 			       "rr_cow_page");
-// 			goto out;
-// 		}
-// 	}
+static void __rr_kmem_cache_init(void)
+{
+	/* Init kmem_cache */
+	if (!rr_cow_page_cache) {
+		rr_cow_page_cache = kmem_cache_create("rr_cow_page",
+						      sizeof(struct rr_cow_page),
+						      0, 0, NULL);
+		if (!rr_cow_page_cache) {
+			RR_ERR("error: fail to kmem_cache_create() for "
+			       "rr_cow_page");
+			goto out;
+		}
+	}
 
-// 	if (!rr_priv_page_cache) {
-// 		rr_priv_page_cache = kmem_cache_create("rr_priv_page",
-// 						       PAGE_SIZE, 0, 0, NULL);
-// 		if (!rr_priv_page_cache) {
-// 			RR_ERR("error: fail to kmem_cache_create() for "
-// 			       "rr_priv_page");
-// 			goto free_cow;
-// 		}
-// 	}
+	if (!rr_priv_page_cache) {
+		rr_priv_page_cache = kmem_cache_create("rr_priv_page",
+						       PAGE_SIZE, 0, 0, NULL);
+		if (!rr_priv_page_cache) {
+			RR_ERR("error: fail to kmem_cache_create() for "
+			       "rr_priv_page");
+			goto free_cow;
+		}
+	}
 
-// 	if (!rr_event_cache) {
-// 		rr_event_cache = kmem_cache_create("rr_event",
-// 						   sizeof(struct rr_event),
-// 						   0, 0, NULL);
-// 		if (!rr_event_cache) {
-// 			RR_ERR("error: fail to kmem_cache_create() for "
-// 			       "rr_event");
-// 			goto free_priv;
-// 		}
-// 	}
+	if (!rr_event_cache) {
+		rr_event_cache = kmem_cache_create("rr_event",
+						   sizeof(struct rr_event),
+						   0, 0, NULL);
+		if (!rr_event_cache) {
+			RR_ERR("error: fail to kmem_cache_create() for "
+			       "rr_event");
+			goto free_priv;
+		}
+	}
 
-// 	RR_DLOG(INIT, "kmem_cache initialized");
-// out:
-// 	return;
+	RR_DLOG(INIT, "kmem_cache initialized");
+out:
+	return;
 
-// free_priv:
-// 	kmem_cache_destroy(rr_priv_page_cache);
-// 	rr_priv_page_cache = NULL;
+free_priv:
+	kmem_cache_destroy(rr_priv_page_cache);
+	rr_priv_page_cache = NULL;
 
-// free_cow:
-// 	kmem_cache_destroy(rr_cow_page_cache);
-// 	rr_cow_page_cache = NULL;
-// }
+free_cow:
+	kmem_cache_destroy(rr_cow_page_cache);
+	rr_cow_page_cache = NULL;
+}
 
 /* Initialization for RR_ASYNC_PREEMPTION_EPT */
 static int __rr_ape_init(struct kvm_vcpu *vcpu)
 {
-	// if (vcpu->rr_info.is_master) {
-	// 	__rr_kmem_cache_init();
-	// }
+	if (vcpu->rr_info.is_master) {
+		__rr_kmem_cache_init();
+	}
 
 	/* MUST make rr_info.enabled true before separating page tables */
-	// __rr_vcpu_enable(vcpu);
+	__rr_vcpu_enable(vcpu);
 
 	/* Obsolete existing paging structures to separate page tables of
 	 * different vcpus.
@@ -202,9 +204,6 @@ static int __rr_ape_init(struct kvm_vcpu *vcpu)
 	// kvm_mmu_unload(vcpu);
 	// kvm_mmu_reload(vcpu);
 
-	vcpu->rr_info.timer_value = kvm_arm_timer_read_sysreg(vcpu, 
-		TIMER_PTIMER, TIMER_REG_TVAL);
-
 	RR_DLOG(INIT, "vcpu=%d enabled, TIMER_TVAL=%lu, pgd_phys=0x%llx",
 		vcpu->vcpu_id, vcpu->rr_info.timer_value,
 		vcpu->kvm->arch.mmu.pgd_phys);
@@ -213,9 +212,9 @@ static int __rr_ape_init(struct kvm_vcpu *vcpu)
 
 static int __rr_ape_post_init(struct kvm_vcpu *vcpu)
 {
-	// RR_DLOG(INIT, "vcpu=%d", vcpu->vcpu_id);
-	// RR_ASSERT(vcpu->rr_info.is_master);
-	// __rr_kvm_enable(vcpu->kvm);
+	RR_DLOG(INIT, "vcpu=%d", vcpu->vcpu_id);
+	RR_ASSERT(vcpu->rr_info.is_master);
+	__rr_kvm_enable(vcpu->kvm);
 	return 0;
 }
 
@@ -243,50 +242,50 @@ void rr_vcpu_info_init(struct kvm_vcpu *vcpu)
 }
 EXPORT_SYMBOL_GPL(rr_vcpu_info_init);
 
-// static void __rr_vcpu_enable(struct kvm_vcpu *vcpu)
-// {
-// 	struct rr_vcpu_info *rr_info = &vcpu->rr_info;
+static void __rr_vcpu_enable(struct kvm_vcpu *vcpu)
+{
+	struct rr_vcpu_info *rr_info = &vcpu->rr_info;
 
-// 	if (rr_ctrl.timer_value != 0) {
-// 		rr_info->timer_value = rr_ctrl.timer_value;
-// 	} else {
-// 		rr_info->timer_value = RR_DEFAULT_PREEMTION_TIMER_VAL;
-// 	}
+	if (rr_ctrl.timer_value != 0) {
+		rr_info->timer_value = rr_ctrl.timer_value;
+	} else {
+		rr_info->timer_value = RR_DEFAULT_PREEMTION_TIMER_VAL;
+	}
 
-// 	rr_info->requests = 0;
-// 	INIT_LIST_HEAD(&rr_info->events_list);
-// 	mutex_init(&rr_info->events_list_lock);
-// 	rr_init_hash(&rr_info->cow_hash);
-// 	re_bitmap_init(&rr_info->access_bitmap);
-// 	re_bitmap_init(&rr_info->dirty_bitmap);
-// 	re_bitmap_init(&rr_info->conflict_bitmap_1);
-// 	re_bitmap_init(&rr_info->conflict_bitmap_2);
-// 	rr_info->public_cb = &rr_info->conflict_bitmap_1;
-// 	rr_info->private_cb = &rr_info->conflict_bitmap_2;
-// 	rr_info->exclusive_commit = 0;
-// 	rr_info->nr_rollback = 0;
-// 	rr_info->nr_chunk = 0;
-// 	rr_info->chunk_info.vcpu_id = vcpu->vcpu_id;
-// 	rr_info->chunk_info.state = RR_CHUNK_STATE_IDLE;
-// 	INIT_LIST_HEAD(&rr_info->private_pages);
-// 	rr_info->nr_private_pages = 0;
-// 	INIT_LIST_HEAD(&rr_info->holding_pages);
-// 	rr_info->nr_holding_pages = 0;
-// #ifdef RR_ROLLBACK_PAGES
-// 	INIT_LIST_HEAD(&rr_info->rollback_pages);
-// 	rr_info->nr_rollback_pages = 0;
-// #endif
-// 	memset(rr_info->exit_stat, 0, sizeof(rr_info->exit_stat));
-// 	rr_info->nr_chunk_rollback = 0;
-// 	rr_info->nr_chunk_commit = 0;
-// 	rr_info->exit_time = 0;
-// 	rr_info->cur_exit_time = 0;
-// 	rr_info->tlb_flush = true;
-// 	rr_info->nr_exits = 0;
-// 	rr_info->enabled = true;
-// 	rr_info->commit_again_clean = true;
-// 	RR_DLOG(INIT, "vcpu=%d rr_vcpu_info initialized", vcpu->vcpu_id);
-// }
+	rr_info->requests = 0;
+	INIT_LIST_HEAD(&rr_info->events_list);
+	mutex_init(&rr_info->events_list_lock);
+	rr_init_hash(&rr_info->cow_hash);
+	re_bitmap_init(&rr_info->access_bitmap);
+	re_bitmap_init(&rr_info->dirty_bitmap);
+	re_bitmap_init(&rr_info->conflict_bitmap_1);
+	re_bitmap_init(&rr_info->conflict_bitmap_2);
+	rr_info->public_cb = &rr_info->conflict_bitmap_1;
+	rr_info->private_cb = &rr_info->conflict_bitmap_2;
+	rr_info->exclusive_commit = 0;
+	rr_info->nr_rollback = 0;
+	rr_info->nr_chunk = 0;
+	rr_info->chunk_info.vcpu_id = vcpu->vcpu_id;
+	rr_info->chunk_info.state = RR_CHUNK_STATE_IDLE;
+	INIT_LIST_HEAD(&rr_info->private_pages);
+	rr_info->nr_private_pages = 0;
+	INIT_LIST_HEAD(&rr_info->holding_pages);
+	rr_info->nr_holding_pages = 0;
+#ifdef RR_ROLLBACK_PAGES
+	INIT_LIST_HEAD(&rr_info->rollback_pages);
+	rr_info->nr_rollback_pages = 0;
+#endif
+	memset(rr_info->exit_stat, 0, sizeof(rr_info->exit_stat));
+	rr_info->nr_chunk_rollback = 0;
+	rr_info->nr_chunk_commit = 0;
+	rr_info->exit_time = 0;
+	rr_info->cur_exit_time = 0;
+	rr_info->tlb_flush = true;
+	rr_info->nr_exits = 0;
+	rr_info->enabled = true;
+	rr_info->commit_again_clean = true;
+	RR_DLOG(INIT, "vcpu=%d rr_vcpu_info initialized", vcpu->vcpu_id);
+}
 
 /* Called when creating a vm */
 void rr_kvm_info_init(struct kvm *kvm)
@@ -303,24 +302,25 @@ void rr_kvm_info_init(struct kvm *kvm)
 }
 EXPORT_SYMBOL_GPL(rr_kvm_info_init);
 
-// static void __rr_kvm_enable(struct kvm *kvm)
-// {
-// 	struct rr_kvm_info *rr_kvm_info = &kvm->rr_info;
+static void __rr_kvm_enable(struct kvm *kvm)
+{
+	struct rr_kvm_info *rr_kvm_info = &kvm->rr_info;
 
-// 	mutex_init(&rr_kvm_info->tm_lock);
-// 	spin_lock_init(&rr_kvm_info->chunk_list_lock);
-// 	INIT_LIST_HEAD(&rr_kvm_info->chunk_list);
-// 	atomic_set(&rr_kvm_info->normal_commit, 1);
-// 	rr_kvm_info->last_record_vcpu = -1;
-// 	rr_kvm_info->dma_holding_sem = false;
-// 	init_rwsem(&rr_kvm_info->tm_rwlock);
-// 	init_waitqueue_head(&rr_kvm_info->exclu_commit_que);
-// 	rr_kvm_info->disabled_time = 0;
-// 	rdtscll(rr_kvm_info->enabled_time);
-// 	rr_kvm_info->enabled = true;
+	mutex_init(&rr_kvm_info->tm_lock);
+	spin_lock_init(&rr_kvm_info->chunk_list_lock);
+	INIT_LIST_HEAD(&rr_kvm_info->chunk_list);
+	atomic_set(&rr_kvm_info->normal_commit, 1);
+	rr_kvm_info->last_record_vcpu = -1;
+	rr_kvm_info->dma_holding_sem = false;
+	init_rwsem(&rr_kvm_info->tm_rwlock);
+	init_waitqueue_head(&rr_kvm_info->exclu_commit_que);
+	rr_kvm_info->disabled_time = 0;
+	// rdtscll(rr_kvm_info->enabled_time);
+	rr_kvm_info->enabled_time = kvm_phys_timer_read();
+	rr_kvm_info->enabled = true;
 
-// 	RR_DLOG(INIT, "rr_kvm_info initialized");
-// }
+	RR_DLOG(INIT, "rr_kvm_info initialized");
+}
 
 int rr_vcpu_enable(struct kvm_vcpu *vcpu)
 {
@@ -329,7 +329,6 @@ int rr_vcpu_enable(struct kvm_vcpu *vcpu)
 	RR_DLOG(INIT, "vcpu=%d start", vcpu->vcpu_id);
 	ret = __rr_vcpu_sync(vcpu, __rr_ape_init, __rr_ape_init,
 			     __rr_ape_post_init);
-	vcpu->rr_info.enabled = true;
 	if (!ret)
 		rr_make_request(RR_REQ_CHECKPOINT, &vcpu->rr_info);
 	else
@@ -337,6 +336,19 @@ int rr_vcpu_enable(struct kvm_vcpu *vcpu)
 		       vcpu->vcpu_id);
 	RR_DLOG(INIT, "vcpu=%d finish", vcpu->vcpu_id);
 	printk(KERN_INFO "vcpu=%d enabled\n", vcpu->vcpu_id);
+	if (vcpu->rr_info.is_master) {
+		RR_DLOG(INIT, "vcpu=%d current TVAL=%d", vcpu->vcpu_id,
+			kvm_arm_timer_read_sysreg(vcpu, TIMER_PTIMER, TIMER_REG_TVAL));
+		RR_DLOG(INIT, "vcpu=%d timer_value: %llu",
+			vcpu->vcpu_id, vcpu->rr_info.timer_value);
+		RR_DLOG(INIT, "vcpu=%d Setting TVAL to timer_value:",
+			vcpu->vcpu_id);
+		kvm_arm_timer_write_sysreg(vcpu, TIMER_PTIMER,
+			TIMER_REG_TVAL, vcpu->rr_info.timer_value);
+		RR_DLOG(INIT, "vcpu=%d current TVAL=%d",
+			vcpu->vcpu_id, kvm_arm_timer_read_sysreg(vcpu,
+			TIMER_PTIMER, TIMER_REG_TVAL));
+	}
 	return ret;
 }
 EXPORT_SYMBOL_GPL(rr_vcpu_enable);
@@ -463,7 +475,7 @@ EXPORT_SYMBOL_GPL(rr_vcpu_checkpoint);
 // 	*sptep &= ~PT_WRITABLE_MASK;
 // }
 
-// /* Called when fixing a page fault. */
+/* Called when fixing a page fault. */
 // void rr_fix_cow_page(struct rr_cow_page *cow_page, u64 *sptep)
 // {
 // 	pfn_t pfn = (*sptep & PT64_BASE_ADDR_MASK) >> PAGE_SHIFT;
@@ -477,54 +489,58 @@ EXPORT_SYMBOL_GPL(rr_vcpu_checkpoint);
 // }
 // EXPORT_SYMBOL_GPL(rr_fix_cow_page);
 
-// struct rr_cow_page *rr_check_cow_page(struct rr_vcpu_info *vrr_info, gfn_t gfn)
-// {
-// 	return rr_hash_find(vrr_info->cow_hash, gfn);
-// }
-// EXPORT_SYMBOL_GPL(rr_check_cow_page);
+struct rr_cow_page *rr_check_cow_page(struct rr_vcpu_info *vrr_info, u64 ipa)
+{
+	return rr_hash_find(vrr_info->cow_hash, ipa);
+}
+EXPORT_SYMBOL_GPL(rr_check_cow_page);
 
-// /* Separate memory with copy-on-write
-//  * Alloc a new page to replace the original page and update the spte, then add
-//  * an item to vcpu->arch.private_pages list.
-//  */
-// void rr_memory_cow(struct kvm_vcpu *vcpu, u64 *sptep, pfn_t pfn, gfn_t gfn)
-// {
-// 	void *new_page;
-// 	struct rr_cow_page *private_mem_page;
-// 	struct rr_vcpu_info *vrr_info = &vcpu->rr_info;
+/* Separate memory with copy-on-write
+ * Alloc a new page to replace the original page and update the spte, then add
+ * an item to vcpu->arch.private_pages list.
+ */
+u64 *rr_memory_cow(struct kvm_vcpu *vcpu, u64 ipa, kvm_pte_t *ptep, struct kvm_pgtable_mm_ops *mm_ops, u64 *childp)
+{
+	u64 *new_page;
+	struct rr_cow_page *private_mem_page;
+	struct rr_vcpu_info *vrr_info = &vcpu->rr_info;
 
-// 	/* Use GFP_ATOMIC here as it will be called while holding spinlock */
-// 	private_mem_page = kmem_cache_alloc(rr_cow_page_cache, GFP_ATOMIC);
-// 	if (unlikely(!private_mem_page)) {
-// 		RR_ERR("error: vcpu=%d failed to kmem_cache_alloc() for "
-// 		       "private_mem_page", vcpu->vcpu_id);
-// 		return;
-// 	}
+	/* Use GFP_ATOMIC here as it will be called while holding spinlock */
+	private_mem_page = kmem_cache_alloc(rr_cow_page_cache, GFP_ATOMIC);
+	if (unlikely(!private_mem_page)) {
+		RR_ERR("error: vcpu=%d failed to kmem_cache_alloc() for "
+		       "private_mem_page", vcpu->vcpu_id);
+		return 0;
+	}
 
-// 	new_page = kmem_cache_alloc(rr_priv_page_cache, GFP_ATOMIC);
-// 	if (unlikely(!new_page)) {
-// 		RR_ERR("error: vcpu=%d failed to kmem_cache_alloc() for "
-// 		       "new_page", vcpu->vcpu_id);
-// 		kmem_cache_free(rr_cow_page_cache, private_mem_page);
-// 		return;
-// 	}
-// 	private_mem_page->gfn = gfn;
-// 	private_mem_page->original_pfn = pfn;
-// 	private_mem_page->original_addr = pfn_to_kaddr(pfn);
-// 	private_mem_page->private_pfn = __pa(new_page) >> PAGE_SHIFT;
-// 	private_mem_page->private_addr = new_page;
-// 	private_mem_page->sptep = sptep;
-// 	private_mem_page->state = RR_COW_STATE_PRIVATE;
-// 	copy_page(new_page, private_mem_page->original_addr);
-// 	rr_spte_set_pfn(sptep, private_mem_page->private_pfn);
-// 	rr_spte_set_cow_tag(sptep);
+	new_page = kmem_cache_alloc(rr_priv_page_cache, GFP_ATOMIC);
+	if (unlikely(!new_page)) {
+		RR_ERR("error: vcpu=%d failed to kmem_cache_alloc() for "
+		       "new_page", vcpu->vcpu_id);
+		kmem_cache_free(rr_cow_page_cache, private_mem_page);
+		return 0;
+	}
+	private_mem_page->ipa = ipa;
+	RR_LOG("ipa: %lld", ipa);
+	private_mem_page->original_addr = childp;
+	private_mem_page->original_pa = mm_ops->virt_to_phys(childp);
+	private_mem_page->private_addr = new_page;
+	RR_LOG("new_page:%lld", *new_page);
+	private_mem_page->private_pa = mm_ops->virt_to_phys(new_page);
+	private_mem_page->ptep = ptep;
+	private_mem_page->state = RR_COW_STATE_PRIVATE;
+	copy_page(new_page, private_mem_page->original_addr);
+	// rr_spte_set_pfn(sptep, private_mem_page->private_pfn);
+	// rr_spte_set_cow_tag(sptep);
 
-// 	/* Add it to the list */
-// 	list_add(&private_mem_page->link, &vrr_info->private_pages);
-// 	(vrr_info->nr_private_pages)++;
-// 	rr_hash_insert(vrr_info->cow_hash, private_mem_page);
-// }
-// EXPORT_SYMBOL_GPL(rr_memory_cow);
+	/* Add it to the list */
+	list_add(&private_mem_page->link, &vrr_info->private_pages);
+	(vrr_info->nr_private_pages)++;
+	rr_hash_insert(vrr_info->cow_hash, private_mem_page);
+
+	return new_page;
+}
+EXPORT_SYMBOL_GPL(rr_memory_cow);
 
 // /* Just cow but not change the sptep yet */
 // void rr_memory_cow_fast(struct kvm_vcpu *vcpu, u64 *sptep, gfn_t gfn)
@@ -1491,41 +1507,43 @@ EXPORT_SYMBOL_GPL(rr_vcpu_checkpoint);
 // 	return commit;
 // }
 
-// int rr_check_chunk(struct kvm_vcpu *vcpu)
-// {
-// 	u32 exit_reason = rr_ops->get_vmx_exit_reason(vcpu);
-// 	struct rr_vcpu_info *vrr_info = &vcpu->rr_info;
-// 	int ret;
+int rr_check_chunk(struct kvm_vcpu *vcpu)
+{
+	unsigned long fault_status;
+	struct rr_vcpu_info *vrr_info = &vcpu->rr_info;
+	int ret;
 
-// 	#ifdef RR_EARLY_CHECK
-// 	if (exit_reason == EXIT_REASON_EPT_VIOLATION) {
-// 		gfn_t gfn = vmcs_read64(GUEST_PHYSICAL_ADDRESS) >> PAGE_SHIFT;
-// 		if (re_test_bit(gfn, vrr_info->public_cb)) {
-// 			exit_reason = EXIT_REASON_PREEMPTION_TIMER;
-// 		}
-// 	}
-// 	#endif
-// 	if (exit_reason != EXIT_REASON_EPT_VIOLATION
-// 	    && exit_reason != EXIT_REASON_PAUSE_INSTRUCTION) {
-// 		ret = rr_ape_check_chunk(vcpu);
-// 		if (ret == -1) {
-// 			RR_ERR("error: vcpu=%d rr_ape_check_chunk() returns -1",
-// 			       vcpu->vcpu_id);
-// 		} else if (ret == 1) {
-// 			rr_make_request(RR_REQ_COMMIT_AGAIN, vrr_info);
-// 			rr_make_request(RR_REQ_POST_CHECK, vrr_info);
-// 			rr_make_request(RR_REQ_CHECKPOINT, vrr_info);
-// 			vrr_info->commit_again_clean = true;
-// 			return RR_CHUNK_COMMIT;
-// 		} else {
-// 			rr_make_request(RR_REQ_POST_CHECK, vrr_info);
-// 			return RR_CHUNK_ROLLBACK;
-// 		}
-// 	}
+	fault_status = kvm_vcpu_trap_get_fault_type(vcpu);
 
-// 	return RR_CHUNK_SKIP;
-// }
-// EXPORT_SYMBOL_GPL(rr_check_chunk);
+	#ifdef RR_EARLY_CHECK
+	if (fault_status == FSC_FAULT) {
+		s32 timer_val = kvm_arm_timer_read_sysreg(vcpu, TIMER_PTIMER,
+			TIMER_REG_TVAL);
+		if (timer_val < 0) {
+			fault_status = FSC_RR;
+		}
+	}
+	#endif
+	if (fault_status == FSC_RR) {
+		// ret = rr_ape_check_chunk(vcpu);
+		// if (ret == -1) {
+		// 	RR_ERR("error: vcpu=%d rr_ape_check_chunk() returns -1",
+		// 	       vcpu->vcpu_id);
+		// } else if (ret == 1) {
+		// 	rr_make_request(RR_REQ_COMMIT_AGAIN, vrr_info);
+		// 	rr_make_request(RR_REQ_POST_CHECK, vrr_info);
+		// 	rr_make_request(RR_REQ_CHECKPOINT, vrr_info);
+		// 	vrr_info->commit_again_clean = true;
+		// 	return RR_CHUNK_COMMIT;
+		// } else {
+		// 	rr_make_request(RR_REQ_POST_CHECK, vrr_info);
+		// 	return RR_CHUNK_ROLLBACK;
+		// }
+	}
+
+	return RR_CHUNK_SKIP;
+}
+EXPORT_SYMBOL_GPL(rr_check_chunk);
 
 // static void rr_clear_holding_pages(struct kvm_vcpu *vcpu)
 // {

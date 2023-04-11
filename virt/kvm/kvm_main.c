@@ -52,6 +52,7 @@
 #include <linux/lockdep.h>
 #include <linux/kthread.h>
 #include <linux/suspend.h>
+#include <linux/record_replay.h>
 
 #include <asm/processor.h>
 #include <asm/ioctl.h>
@@ -430,6 +431,7 @@ static void kvm_vcpu_init(struct kvm_vcpu *vcpu, struct kvm *kvm, unsigned id)
 	vcpu->ready = false;
 	preempt_notifier_init(&vcpu->preempt_notifier, &kvm_preempt_ops);
 	vcpu->last_used_slot = 0;
+	rr_vcpu_info_init(vcpu);
 }
 
 void kvm_vcpu_destroy(struct kvm_vcpu *vcpu)
@@ -1104,6 +1106,7 @@ static struct kvm *kvm_create_vm(unsigned long type)
 	preempt_notifier_inc();
 	kvm_init_pm_notifier(kvm);
 
+	rr_kvm_info_init(kvm);
 	return kvm;
 
 out_err:

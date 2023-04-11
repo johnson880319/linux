@@ -528,12 +528,66 @@ static int set_sve_reg(struct kvm_vcpu *vcpu, const struct kvm_one_reg *reg)
 
 int kvm_arch_vcpu_ioctl_get_regs(struct kvm_vcpu *vcpu, struct kvm_regs *regs)
 {
-	return -EINVAL;
+	unsigned int i;
+
+	/* user_pt_regs */
+	for (i = 0; i < 31; ++i)
+		regs->regs.regs[i] = vcpu->arch.ctxt.regs.regs[i];
+	regs->regs.sp = vcpu->arch.ctxt.regs.sp;
+	regs->regs.pc = vcpu->arch.ctxt.regs.pc;
+	regs->regs.pstate = vcpu->arch.ctxt.regs.pstate;
+
+	regs->sp_el1 = vcpu_read_sys_reg(vcpu, SP_EL1);
+	regs->elr_el1 = vcpu_read_sys_reg(vcpu, ELR_EL1);
+	regs->spsr[KVM_SPSR_EL1] = vcpu_read_sys_reg(vcpu, SPSR_EL1);
+	regs->spsr[KVM_SPSR_ABT] = vcpu->arch.ctxt.spsr_abt;
+	regs->spsr[KVM_SPSR_UND] = vcpu->arch.ctxt.spsr_und;
+	regs->spsr[KVM_SPSR_IRQ] = vcpu->arch.ctxt.spsr_irq;
+	regs->spsr[KVM_SPSR_FIQ] = vcpu->arch.ctxt.spsr_fiq;
+
+	/* fp_regs */
+	for (i = 0; i < 31; ++i)
+		regs->fp_regs.vregs[i] = vcpu->arch.ctxt.fp_regs.vregs[i];
+	regs->fp_regs.fpsr = vcpu->arch.ctxt.fp_regs.fpsr;
+	regs->fp_regs.fpcr = vcpu->arch.ctxt.fp_regs.fpcr;
+
+	/* sys_regs */
+	for (i = 1; i < NR_SYS_REGS; ++i)
+		regs->sys_regs[i] = vcpu_read_sys_reg(vcpu, i);
+
+	return 0;
 }
 
 int kvm_arch_vcpu_ioctl_set_regs(struct kvm_vcpu *vcpu, struct kvm_regs *regs)
 {
-	return -EINVAL;
+	unsigned int i;
+
+	/* user_pt_regs */
+	for (i = 0; i < 31; ++i)
+		vcpu->arch.ctxt.regs.regs[i] = regs->regs.regs[i];
+	vcpu->arch.ctxt.regs.sp = regs->regs.sp;
+	vcpu->arch.ctxt.regs.pc = regs->regs.pc;
+	vcpu->arch.ctxt.regs.pstate = regs->regs.pstate;
+
+	vcpu_write_sys_reg(vcpu, regs->sp_el1, SP_EL1);
+	vcpu_write_sys_reg(vcpu, regs->elr_el1, ELR_EL1);
+	vcpu_write_sys_reg(vcpu, regs->spsr[KVM_SPSR_EL1], SPSR_EL1);
+	vcpu->arch.ctxt.spsr_abt = regs->spsr[KVM_SPSR_ABT];
+	vcpu->arch.ctxt.spsr_und = regs->spsr[KVM_SPSR_UND];
+	vcpu->arch.ctxt.spsr_irq = regs->spsr[KVM_SPSR_IRQ];
+	vcpu->arch.ctxt.spsr_fiq = regs->spsr[KVM_SPSR_FIQ];
+
+	/* fp_regs */
+	for (i = 0; i < 31; ++i)
+		vcpu->arch.ctxt.fp_regs.vregs[i] = regs->fp_regs.vregs[i];
+	vcpu->arch.ctxt.fp_regs.fpsr = regs->fp_regs.fpsr;
+	vcpu->arch.ctxt.fp_regs.fpcr = regs->fp_regs.fpcr;
+
+	/* sys_regs */
+	for (i = 1; i < NR_SYS_REGS; ++i)
+		vcpu_write_sys_reg(vcpu, regs->sys_regs[i], i);
+
+	return 0;
 }
 
 static int copy_core_reg_indices(const struct kvm_vcpu *vcpu,

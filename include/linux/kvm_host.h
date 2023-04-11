@@ -36,6 +36,8 @@
 
 #include <linux/kvm_types.h>
 
+#include <linux/record_replay.h>
+
 #include <asm/kvm_host.h>
 #include <linux/kvm_dirty_ring.h>
 
@@ -174,6 +176,8 @@ bool kvm_make_cpus_request_mask(struct kvm *kvm, unsigned int req,
 extern struct mutex kvm_lock;
 extern struct list_head vm_list;
 
+/* Record and replay */
+extern struct kvm_rr_ctrl rr_ctrl;
 struct kvm_io_range {
 	gpa_t addr;
 	int len;
@@ -361,6 +365,8 @@ struct kvm_vcpu {
 	 * it is a valid slot.
 	 */
 	int last_used_slot;
+	/* Record and replay */
+	struct rr_vcpu_info rr_info;
 };
 
 /* must be called with irqs disabled */
@@ -623,6 +629,9 @@ struct kvm {
 	struct notifier_block pm_notifier;
 #endif
 	char stats_id[KVM_STATS_NAME_SIZE];
+
+	/* Record and replay */
+	struct rr_kvm_info rr_info;
 };
 
 #define kvm_err(fmt, ...) \
@@ -993,6 +1002,10 @@ long kvm_arch_dev_ioctl(struct file *filp,
 			unsigned int ioctl, unsigned long arg);
 long kvm_arch_vcpu_ioctl(struct file *filp,
 			 unsigned int ioctl, unsigned long arg);
+
+/* Record and replay */
+int rr_vcpu_make_checkpoint(struct kvm_vcpu *vcpu, int type, void *arg);
+
 vm_fault_t kvm_arch_vcpu_fault(struct kvm_vcpu *vcpu, struct vm_fault *vmf);
 
 int kvm_vm_ioctl_check_extension(struct kvm *kvm, long ext);

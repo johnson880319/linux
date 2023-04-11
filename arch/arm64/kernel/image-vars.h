@@ -134,6 +134,11 @@ KVM_NVHE_ALIAS(__hyp_rodata_end);
 /* pKVM static key */
 KVM_NVHE_ALIAS(kvm_protected_mode_initialized);
 
+/* rr */
+KVM_NVHE_ALIAS(rr_log);
+KVM_NVHE_ALIAS(rr_memory_cow);
+KVM_NVHE_ALIAS(rr_check_cow_page);
+
 #endif /* CONFIG_KVM */
 
 #endif /* __ARM64_KERNEL_IMAGE_VARS_H */

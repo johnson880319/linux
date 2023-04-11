@@ -8,8 +8,12 @@
  */
 
 #include <linux/bitfield.h>
+#include <linux/record_replay.h>
 #include <asm/kvm_pgtable.h>
 #include <asm/stage2_pgtable.h>
+#include <asm/pgtable.h>
+#include <asm/logger.h>
+#include <asm/kvm_emulate.h>
 
 
 #define KVM_PTE_TYPE			BIT(1)
@@ -303,6 +307,26 @@ static int leaf_walker(u64 addr, u64 end, u32 level, kvm_pte_t *ptep,
 	return 0;
 }
 
+static int rr_leaf_walker(u64 addr, u64 end, u32 level, kvm_pte_t *ptep,
+		       enum kvm_pgtable_walk_flags flag, void * const arg)
+{
+	struct leaf_walk_data *data = arg;
+
+	data->pte   = *ptep;
+	data->level = level;
+
+	if (pte_young(__pte(*ptep))) {
+		RR_DLOG(MMU, "pte:%llu is young", *ptep);
+		return 0;
+	}
+	if (pte_dirty(__pte(*ptep))) {
+		RR_DLOG(MMU, "pte:%llu is dirty", *ptep);
+	}
+
+
+	return 0;
+}
+
 int kvm_pgtable_get_leaf(struct kvm_pgtable *pgt, u64 addr,
 			 kvm_pte_t *ptep, u32 *level)
 {
@@ -316,6 +340,30 @@ int kvm_pgtable_get_leaf(struct kvm_pgtable *pgt, u64 addr,
 
 	ret = kvm_pgtable_walk(pgt, ALIGN_DOWN(addr, PAGE_SIZE),
 			       PAGE_SIZE, &walker);
+	if (!ret) {
+		if (ptep)
+			*ptep  = data.pte;
+		if (level)
+			*level = data.level;
+	}
+
+	return ret;
+}
+
+int rr_kvm_pgtable_get_leaf(struct kvm_pgtable *pgt, u64 addr,
+			 kvm_pte_t *ptep, u32 *level)
+{
+	struct leaf_walk_data data;
+	struct kvm_pgtable_walker walker = {
+		.cb	= rr_leaf_walker,
+		.flags	= KVM_PGTABLE_WALK_LEAF,
+		.arg	= &data,
+	};
+	int ret;
+	// pte_t pte;
+
+	ret = kvm_pgtable_walk(pgt, ALIGN_DOWN(addr, PAGE_SIZE),
+			       BIT(pgt->ia_bits), &walker);
 	if (!ret) {
 		if (ptep)
 			*ptep  = data.pte;
@@ -515,6 +563,9 @@ struct stage2_map_data {
 
 	/* Force mappings to page granularity */
 	bool				force_pte;
+
+	/* RR */
+	struct kvm_vcpu			*vcpu;
 };
 
 u64 kvm_get_vtcr(u64 mmfr0, u64 mmfr1, u32 phys_shift)
@@ -730,6 +781,16 @@ static int stage2_map_walk_leaf(u64 addr, u64 end, u32 level, kvm_pte_t *ptep,
 	struct kvm_pgtable_mm_ops *mm_ops = data->mm_ops;
 	kvm_pte_t *childp, pte = *ptep;
 	int ret;
+	struct kvm_vcpu *vcpu = data->vcpu;
+	struct rr_vcpu_info *vrr_info = &vcpu->rr_info;
+	struct rr_cow_page *cow_page = NULL;
+
+	if (likely(vrr_info->enabled)) {
+		cow_page = rr_check_cow_page(vrr_info, addr);
+		if (!cow_page && !kvm_is_write_fault(vcpu)) {
+			data->attr &= ~KVM_PTE_LEAF_ATTR_LO_S2_S2AP_W;
+		}
+	}
 
 	if (data->anchor) {
 		if (stage2_pte_is_counted(pte))
@@ -751,6 +812,11 @@ static int stage2_map_walk_leaf(u64 addr, u64 end, u32 level, kvm_pte_t *ptep,
 	childp = mm_ops->zalloc_page(data->memcache);
 	if (!childp)
 		return -ENOMEM;
+	if (likely(vrr_info->enabled)) {
+		if (kvm_is_write_fault(vcpu)) {
+			childp = rr_memory_cow(vcpu, addr, ptep, mm_ops, childp);
+		}
+	}
 
 	/*
 	 * If we've run into an existing block mapping then replace it with
@@ -839,6 +905,39 @@ int kvm_pgtable_stage2_map(struct kvm_pgtable *pgt, u64 addr, u64 size,
 		.memcache	= mc,
 		.mm_ops		= pgt->mm_ops,
 		.force_pte	= pgt->force_pte_cb && pgt->force_pte_cb(addr, addr + size, prot),
+	};
+	struct kvm_pgtable_walker walker = {
+		.cb		= stage2_map_walker,
+		.flags		= KVM_PGTABLE_WALK_TABLE_PRE |
+				  KVM_PGTABLE_WALK_LEAF |
+				  KVM_PGTABLE_WALK_TABLE_POST,
+		.arg		= &map_data,
+	};
+
+	if (WARN_ON((pgt->flags & KVM_PGTABLE_S2_IDMAP) && (addr != phys)))
+		return -EINVAL;
+
+	ret = stage2_set_prot_attr(pgt, prot, &map_data.attr);
+	if (ret)
+		return ret;
+
+	ret = kvm_pgtable_walk(pgt, addr, size, &walker);
+	dsb(ishst);
+	return ret;
+}
+
+int rr_kvm_pgtable_stage2_map(struct kvm_pgtable *pgt, u64 addr, u64 size,
+			   u64 phys, enum kvm_pgtable_prot prot,
+			   void *mc, struct kvm_vcpu *vcpu)
+{
+	int ret;
+	struct stage2_map_data map_data = {
+		.phys		= ALIGN_DOWN(phys, PAGE_SIZE),
+		.mmu		= pgt->mmu,
+		.memcache	= mc,
+		.mm_ops		= pgt->mm_ops,
+		.force_pte	= pgt->force_pte_cb && pgt->force_pte_cb(addr, addr + size, prot),
+		.vcpu		= vcpu,
 	};
 	struct kvm_pgtable_walker walker = {
 		.cb		= stage2_map_walker,

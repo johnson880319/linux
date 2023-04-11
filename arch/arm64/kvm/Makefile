@@ -23,6 +23,7 @@ kvm-y := $(KVM)/kvm_main.o $(KVM)/coalesced_mmio.o $(KVM)/eventfd.o \
 	 vgic/vgic-mmio.o vgic/vgic-mmio-v2.o \
 	 vgic/vgic-mmio-v3.o vgic/vgic-kvm-device.o \
 	 vgic/vgic-its.o vgic/vgic-debug.o \
-	 logger.o logger_mmap.o
+	 logger.o logger_mmap.o \
+	 checkpoint_rollback.o record_replay.o
 
 kvm-$(CONFIG_HW_PERF_EVENTS)  += pmu-emul.o

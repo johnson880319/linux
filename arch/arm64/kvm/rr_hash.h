@@ -48,22 +48,22 @@ static inline u32 rr_hashfn(u64 val)
 static inline void rr_hash_insert(struct hlist_head *hash,
 				  struct rr_cow_page *ele_page)
 {
-	u32 hashkey = rr_hashfn(ele_page->gfn);
+	u32 hashkey = rr_hashfn(ele_page->ipa);
 
 	RR_ASSERT(hashkey < RR_HASH_SIZE);
 	hlist_add_head(&ele_page->hlink, &hash[hashkey]);
 }
 
-static inline struct rr_cow_page *rr_hash_find(struct hlist_head *hash, u64 gfn)
+static inline struct rr_cow_page *rr_hash_find(struct hlist_head *hash, u64 ipa)
 {
-	u32 hashkey = rr_hashfn(gfn);
+	u32 hashkey = rr_hashfn(ipa);
 	struct hlist_head *phead;
 	struct rr_cow_page *ele_page;
 
 	RR_ASSERT(hashkey < RR_HASH_SIZE);
 	phead = &hash[hashkey];
 	hlist_for_each_entry(ele_page, phead, hlink) {
-		if (ele_page->gfn == gfn) {
+		if (ele_page->ipa == ipa) {
 			return ele_page;
 		}
 	}

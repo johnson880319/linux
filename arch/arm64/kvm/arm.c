@@ -39,6 +39,8 @@
 #include <asm/kvm_mmu.h>
 #include <asm/kvm_emulate.h>
 #include <asm/sections.h>
+#include <asm/logger.h>
+#include <asm/kvm_pgtable.h>
 
 #include <kvm/arm_hypercalls.h>
 #include <kvm/arm_pmu.h>
@@ -769,6 +771,11 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 {
 	struct kvm_run *run = vcpu->run;
 	int ret;
+	struct rr_vcpu_info *vrr_info = &vcpu->rr_info;
+	s32 timer_val;
+	kvm_pte_t pte;
+	u32 level;
+	int done = 0;
 
 	if (unlikely(!kvm_vcpu_initialized(vcpu)))
 		return -ENOEXEC;
@@ -805,6 +812,29 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 		update_vmid(&vcpu->arch.hw_mmu->vmid);
 
 		check_vcpu_requests(vcpu);
+
+		if (unlikely(!vrr_info->enabled && rr_ctrl.enabled)) {
+			rr_vcpu_enable(vcpu);
+		}
+		// if (vrr_info->enabled && vcpu->rr_info.is_master) {
+		// 	timer_val = kvm_arm_timer_read_sysreg(vcpu,
+		// 		TIMER_PTIMER, TIMER_REG_TVAL);
+		// 	RR_DLOG(INIT, "vcpu=%d current TVAL=%d",
+		// 	vcpu->vcpu_id, timer_val);
+		// 	if (timer_val < 0 && !done) {
+		// 		rr_kvm_pgtable_get_leaf(vcpu->arch.hw_mmu->pgt,
+		// 			(*(u64 *)__va(vcpu->arch.hw_mmu->pgd_phys)),
+		// 			&pte, &level);
+		// 		done = 1;
+		// 	}
+		// }
+
+		if (rr_check_request(RR_REQ_CHECKPOINT, vrr_info)) {
+			/* We need to read back the value from hardware fpu
+			* (unload the fpu).
+			*/
+			rr_vcpu_checkpoint(vcpu);
+		}
 
 		/*
 		 * Preparing the interrupts to be injected also
@@ -1201,6 +1231,107 @@ static int kvm_arm_vcpu_set_events(struct kvm_vcpu *vcpu,
 			return -EINVAL;
 
 	return __kvm_arm_vcpu_set_events(vcpu, events);
+}
+
+int rr_vcpu_make_checkpoint(struct kvm_vcpu *vcpu, int type, void *arg)
+{
+	int ret;
+	ret = 0;
+
+	switch (type){
+	case KVM_GET_REGS: {
+		ret = kvm_arch_vcpu_ioctl_get_regs(vcpu, arg);
+		break;
+	}
+	// case KVM_GET_FPU: {
+	// 	ret = kvm_arch_vcpu_ioctl_get_fpu(vcpu, arg);
+	// 	break;
+	// }
+	// case KVM_GET_XSAVE: {
+	// 	kvm_vcpu_ioctl_x86_get_xsave(vcpu, arg);
+	// 	break;
+	// }
+	// case KVM_GET_SREGS: {
+	// 	ret = kvm_arch_vcpu_ioctl_get_sregs(vcpu, arg);
+	// 	break;
+	// }
+	// case KVM_GET_XCRS: {
+	// 	kvm_vcpu_ioctl_x86_get_xcrs(vcpu, arg);
+	// 	break;
+	// }
+	// case KVM_GET_MSRS: {
+	// 	/* All parameters are kernel addresses, so use __msr_io */
+	// 	struct kvm_msrs *msrs = arg;
+	// 	struct kvm_msr_entry *entries = msrs->entries;
+	// 	ret = __msr_io(vcpu, arg, entries, kvm_get_msr);
+	// 	break;
+	// }
+	// case KVM_GET_MP_STATE: {
+	// 	ret = kvm_arch_vcpu_ioctl_get_mpstate(vcpu, arg);
+	// 	break;
+	// }
+	// case KVM_GET_LAPIC: {
+	// 	ret = rr_vcpu_checkpoint_get_lapic(vcpu, arg);
+	// 	break;
+	// }
+	// case KVM_GET_VCPU_EVENTS: {
+	// 	kvm_arm_vcpu_get_events(vcpu, arg);
+	// 	break;
+	// }
+	// case KVM_GET_DEBUGREGS: {
+	// 	kvm_vcpu_ioctl_x86_get_debugregs(vcpu, arg);
+	// 	break;
+	// }
+
+	/* Set vcpu status */
+	case KVM_SET_REGS: {
+		ret = kvm_arch_vcpu_ioctl_set_regs(vcpu, arg);
+		break;
+	}
+	// case KVM_SET_XSAVE: {
+	// 	ret = kvm_vcpu_ioctl_x86_set_xsave(vcpu, arg);
+	// 	break;
+	// }
+	// case KVM_SET_FPU:{
+	// 	ret = kvm_arch_vcpu_ioctl_set_fpu(vcpu, arg);
+	// 	break;
+	// }
+	// case KVM_SET_XCRS:{
+	// 	ret = kvm_vcpu_ioctl_x86_set_xcrs(vcpu, arg);
+	// 	break;
+	// }
+	// case KVM_SET_SREGS:{
+	// 	ret = kvm_arch_vcpu_ioctl_set_sregs(vcpu, arg);
+	// 	break;
+	// }
+	// case KVM_SET_MSRS:{
+	// 	/* All parameters are kernel addresses, so use __msr_io */
+	// 	struct kvm_msrs *msrs = arg;
+	// 	struct kvm_msr_entry *entries = msrs->entries;
+	// 	ret = __msr_io(vcpu, arg, entries, do_set_msr);
+	// 	break;
+	// }
+	// case KVM_SET_MP_STATE:{
+	// 	ret = kvm_arch_vcpu_ioctl_set_mpstate(vcpu, arg);
+	// 	break;
+	// }
+	// case KVM_SET_LAPIC: {
+	// 	ret = rr_vcpu_rollback_set_lapic(vcpu, arg);
+	// 	break;
+	// }
+	// case KVM_SET_VCPU_EVENTS: {
+	// 	kvm_arm_vcpu_set_events(vcpu, arg);
+	// 	break;
+	// }
+	// case KVM_SET_DEBUGREGS: {
+	// 	kvm_vcpu_ioctl_x86_set_debugregs(vcpu, arg);
+	// 	break;
+	// }
+
+	default:
+		ret = -EINVAL;
+	}
+	return ret;
 }
 
 long kvm_arch_vcpu_ioctl(struct file *filp,
