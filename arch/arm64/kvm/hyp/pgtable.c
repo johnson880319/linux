@@ -296,6 +296,10 @@ struct leaf_walk_data {
 	u32		level;
 };
 
+struct rr_leaf_walk_data {
+	struct kvm_vcpu	*vcpu;
+};
+
 static int leaf_walker(u64 addr, u64 end, u32 level, kvm_pte_t *ptep,
 		       enum kvm_pgtable_walk_flags flag, void * const arg)
 {
@@ -310,18 +314,22 @@ static int leaf_walker(u64 addr, u64 end, u32 level, kvm_pte_t *ptep,
 static int rr_leaf_walker(u64 addr, u64 end, u32 level, kvm_pte_t *ptep,
 		       enum kvm_pgtable_walk_flags flag, void * const arg)
 {
-	struct leaf_walk_data *data = arg;
+	struct rr_leaf_walk_data *data = arg;
+	struct kvm_vcpu *vcpu = data->vcpu;
+	kvm_pte_t kpte = *ptep;
+	pte_t pte = __pte(kpte);
 
-	data->pte   = *ptep;
-	data->level = level;
+	if(kvm_pte_valid(kpte)) {
+		// __rr_set_AD_bit(vcpu, pte, addr);
+	}
 
-	if (pte_young(__pte(*ptep))) {
-		RR_DLOG(MMU, "pte:%llu is young", *ptep);
-		return 0;
-	}
-	if (pte_dirty(__pte(*ptep))) {
-		RR_DLOG(MMU, "pte:%llu is dirty", *ptep);
-	}
+	// if (pte_young(pte)) {
+	// 	RR_DLOG(MMU, "pte:%llu is young", *ptep);
+	// 	return 0;
+	// }
+	// if (pte_dirty(pte)) {
+	// 	RR_DLOG(MMU, "pte:%llu is dirty", *ptep);
+	// }
 
 
 	return 0;
@@ -362,8 +370,7 @@ int rr_kvm_pgtable_get_leaf(struct kvm_pgtable *pgt, u64 addr,
 	int ret;
 	// pte_t pte;
 
-	ret = kvm_pgtable_walk(pgt, ALIGN_DOWN(addr, PAGE_SIZE),
-			       BIT(pgt->ia_bits), &walker);
+	ret = kvm_pgtable_walk(pgt, 0, BIT(pgt->ia_bits), &walker);
 	if (!ret) {
 		if (ptep)
 			*ptep  = data.pte;
@@ -781,6 +788,48 @@ static int stage2_map_walk_leaf(u64 addr, u64 end, u32 level, kvm_pte_t *ptep,
 	struct kvm_pgtable_mm_ops *mm_ops = data->mm_ops;
 	kvm_pte_t *childp, pte = *ptep;
 	int ret;
+
+	if (data->anchor) {
+		if (stage2_pte_is_counted(pte))
+			mm_ops->put_page(ptep);
+
+		return 0;
+	}
+
+	ret = stage2_map_walker_try_leaf(addr, end, level, ptep, data);
+	if (ret != -E2BIG)
+		return ret;
+
+	if (WARN_ON(level == KVM_PGTABLE_MAX_LEVELS - 1))
+		return -EINVAL;
+
+	if (!data->memcache)
+		return -ENOMEM;
+
+	childp = mm_ops->zalloc_page(data->memcache);
+	if (!childp)
+		return -ENOMEM;
+
+	/*
+	 * If we've run into an existing block mapping then replace it with
+	 * a table. Accesses beyond 'end' that fall within the new table
+	 * will be mapped lazily.
+	 */
+	if (stage2_pte_is_counted(pte))
+		stage2_put_pte(ptep, data->mmu, addr, level, mm_ops);
+
+	kvm_set_table_pte(ptep, childp, mm_ops);
+	mm_ops->get_page(ptep);
+
+	return 0;
+}
+
+static int rr_stage2_map_walk_leaf(u64 addr, u64 end, u32 level, kvm_pte_t *ptep,
+				struct stage2_map_data *data)
+{
+	struct kvm_pgtable_mm_ops *mm_ops = data->mm_ops;
+	kvm_pte_t *childp, pte = *ptep;
+	int ret;
 	struct kvm_vcpu *vcpu = data->vcpu;
 	struct rr_vcpu_info *vrr_info = &vcpu->rr_info;
 	struct rr_cow_page *cow_page = NULL;
@@ -894,6 +943,23 @@ static int stage2_map_walker(u64 addr, u64 end, u32 level, kvm_pte_t *ptep,
 	return -EINVAL;
 }
 
+static int rr_stage2_map_walker(u64 addr, u64 end, u32 level, kvm_pte_t *ptep,
+			     enum kvm_pgtable_walk_flags flag, void * const arg)
+{
+	struct stage2_map_data *data = arg;
+
+	switch (flag) {
+	case KVM_PGTABLE_WALK_TABLE_PRE:
+		return stage2_map_walk_table_pre(addr, end, level, ptep, data);
+	case KVM_PGTABLE_WALK_LEAF:
+		return rr_stage2_map_walk_leaf(addr, end, level, ptep, data);
+	case KVM_PGTABLE_WALK_TABLE_POST:
+		return stage2_map_walk_table_post(addr, end, level, ptep, data);
+	}
+
+	return -EINVAL;
+}
+
 int kvm_pgtable_stage2_map(struct kvm_pgtable *pgt, u64 addr, u64 size,
 			   u64 phys, enum kvm_pgtable_prot prot,
 			   void *mc)
@@ -940,7 +1006,7 @@ int rr_kvm_pgtable_stage2_map(struct kvm_pgtable *pgt, u64 addr, u64 size,
 		.vcpu		= vcpu,
 	};
 	struct kvm_pgtable_walker walker = {
-		.cb		= stage2_map_walker,
+		.cb		= rr_stage2_map_walker,
 		.flags		= KVM_PGTABLE_WALK_TABLE_PRE |
 				  KVM_PGTABLE_WALK_LEAF |
 				  KVM_PGTABLE_WALK_TABLE_POST,
@@ -953,6 +1019,8 @@ int rr_kvm_pgtable_stage2_map(struct kvm_pgtable *pgt, u64 addr, u64 size,
 	ret = stage2_set_prot_attr(pgt, prot, &map_data.attr);
 	if (ret)
 		return ret;
+
+	RR_DLOG(MMU, "RR PGTABLE STAGE2 MAP!");
 
 	ret = kvm_pgtable_walk(pgt, addr, size, &walker);
 	dsb(ishst);

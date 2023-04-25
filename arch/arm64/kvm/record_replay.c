@@ -506,26 +506,28 @@ u64 *rr_memory_cow(struct kvm_vcpu *vcpu, u64 ipa, kvm_pte_t *ptep, struct kvm_p
 	struct rr_vcpu_info *vrr_info = &vcpu->rr_info;
 
 	/* Use GFP_ATOMIC here as it will be called while holding spinlock */
-	private_mem_page = kmem_cache_alloc(rr_cow_page_cache, GFP_ATOMIC);
+	private_mem_page = kmem_cache_alloc(rr_cow_page_cache, GFP_ATOMIC | __GFP_ACCOUNT);
 	if (unlikely(!private_mem_page)) {
 		RR_ERR("error: vcpu=%d failed to kmem_cache_alloc() for "
 		       "private_mem_page", vcpu->vcpu_id);
 		return 0;
 	}
+	RR_DLOG(MMU, "private_mem_page:%lld", private_mem_page);
 
-	new_page = kmem_cache_alloc(rr_priv_page_cache, GFP_ATOMIC);
+	new_page = kmem_cache_alloc(rr_priv_page_cache, GFP_ATOMIC | __GFP_ACCOUNT);
 	if (unlikely(!new_page)) {
 		RR_ERR("error: vcpu=%d failed to kmem_cache_alloc() for "
 		       "new_page", vcpu->vcpu_id);
 		kmem_cache_free(rr_cow_page_cache, private_mem_page);
 		return 0;
 	}
+	RR_DLOG(MMU, "new_page:%lld", new_page);
+
 	private_mem_page->ipa = ipa;
-	RR_LOG("ipa: %lld", ipa);
+	RR_DLOG(MMU, "ipa: %lld", ipa);
 	private_mem_page->original_addr = childp;
 	private_mem_page->original_pa = mm_ops->virt_to_phys(childp);
 	private_mem_page->private_addr = new_page;
-	RR_LOG("new_page:%lld", *new_page);
 	private_mem_page->private_pa = mm_ops->virt_to_phys(new_page);
 	private_mem_page->ptep = ptep;
 	private_mem_page->state = RR_COW_STATE_PRIVATE;
@@ -892,7 +894,7 @@ EXPORT_SYMBOL_GPL(rr_memory_cow);
 
 // 	/* Traverse the private_pages */
 // 	list_for_each_entry_safe(private_page, temp, head, link) {
-// 		if (memslot_id(kvm, private_page->gfn) == 8) {
+// 		if (memslot_id(kvm, private_page->ipa) == 8) {
 // 			private_page->chunk_num = nr_chunk;
 // 			rr_check_cow_page_before_access(vcpu, private_page);
 // 			copy_page(private_page->original_addr,
@@ -1294,22 +1296,21 @@ EXPORT_SYMBOL_GPL(rr_memory_cow);
 // }
 // EXPORT_SYMBOL_GPL(rr_apic_reinsert_irq);
 
-// static void  __rr_set_AD_bit(struct kvm_vcpu *vcpu, u64 *sptep, gpa_t gpa, hpa_t addr)
-// {
-// 	gfn_t gfn;
-// 	bool accessed = *sptep & VMX_EPT_ACCESS_BIT;
-// 	bool dirty;
+static void  __rr_set_AD_bit(struct kvm_vcpu *vcpu, pte_t pte, u64 addr)
+{
+	// bool accessed = *sptep & VMX_EPT_ACCESS_BIT;
+	bool dirty;
 
-// 	if (accessed) {
-// 		gfn = gpa >> PAGE_SHIFT;
-// 		dirty = *sptep & VMX_EPT_DIRTY_BIT;
-// 		re_set_bit(gfn, &vcpu->rr_info.access_bitmap);
-// 		if (dirty) {
-// 			re_set_bit(gfn, &vcpu->rr_info.dirty_bitmap);
-// 		}
-// 		*sptep &= ~(VMX_EPT_ACCESS_BIT | VMX_EPT_DIRTY_BIT);
-// 	}
-// }
+	if (!pte_young(pte)) {
+		// gfn = gpa >> PAGE_SHIFT;
+		// dirty = *sptep & VMX_EPT_DIRTY_BIT;
+		re_set_bit(addr, &vcpu->rr_info.access_bitmap);
+		if (pte_dirty(pte)) {
+			re_set_bit(addr, &vcpu->rr_info.dirty_bitmap);
+		}
+		// *sptep &= ~(VMX_EPT_ACCESS_BIT | VMX_EPT_DIRTY_BIT);
+	}
+}
 
 // static void __rr_walk_spt(struct kvm_vcpu *vcpu, hpa_t shadow_addr, int level,
 // 			  gpa_t gpa)
@@ -1345,16 +1346,18 @@ EXPORT_SYMBOL_GPL(rr_memory_cow);
 // 	}
 // }
 
-// static void rr_gen_bitmap_from_spt(struct kvm_vcpu *vcpu)
-// {
-// 	int level = vcpu->arch.mmu.shadow_root_level;
-// 	hpa_t shadow_addr = vcpu->arch.mmu.root_hpa;
+static void rr_gen_bitmap_from_spt(struct kvm_vcpu *vcpu)
+{
+	// int level = vcpu->arch.mmu.shadow_root_level;
+	// hpa_t shadow_addr = vcpu->arch.mmu.root_hpa;
+	// phys_addr_t pgd_addr = vcpu->arch.hw_mmu->pgd_phys;
+	// struct kvm_pgtable pgt = vcpu->arch.hw_mmu->pgt;
 
-// 	RR_ASSERT(level == PT64_ROOT_LEVEL);
-// 	RR_ASSERT((vcpu->arch.mmu.root_level == PT64_ROOT_LEVEL) &&
-// 		  vcpu->arch.mmu.direct_map);
-// 	__rr_walk_spt(vcpu, shadow_addr, level, 0);
-// }
+	// RR_ASSERT(level == PT64_ROOT_LEVEL);
+	// RR_ASSERT((vcpu->arch.mmu.root_level == PT64_ROOT_LEVEL) &&
+	// 	  vcpu->arch.mmu.direct_map);
+	// __rr_walk_spt(vcpu, shadow_addr, level, 0);
+}
 
 // static inline int rr_detect_conflict(struct region_bitmap *access_bm,
 // 				     struct region_bitmap *conflict_bm)
@@ -1501,7 +1504,9 @@ EXPORT_SYMBOL_GPL(rr_memory_cow);
 // 	re_bitmap_clear(&vrr_info->dirty_bitmap);
 // 	re_bitmap_clear(vrr_info->private_cb);
 
-// 	vmcs_write32(VMX_PREEMPTION_TIMER_VALUE, vrr_info->timer_value);
+// 	// vmcs_write32(VMX_PREEMPTION_TIMER_VALUE, vrr_info->timer_value);
+// 	kvm_arm_timer_write_sysreg(vcpu, TIMER_PTIMER,
+// 		TIMER_REG_TVAL, vrr_info->timer_value);
 // out:
 // 	vrr_info->tlb_flush = true;
 // 	return commit;

@@ -1135,9 +1135,16 @@ static int user_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 	if (fault_status == FSC_PERM && vma_pagesize == fault_granule) {
 		ret = kvm_pgtable_stage2_relax_perms(pgt, fault_ipa, prot);
 	} else {
-		ret = rr_kvm_pgtable_stage2_map(pgt, fault_ipa, vma_pagesize,
-					     __pfn_to_phys(pfn), prot,
-					     memcache, vcpu);
+		if (vcpu->rr_info.enabled) {
+			ret = rr_kvm_pgtable_stage2_map(pgt, fault_ipa,
+						vma_pagesize, __pfn_to_phys(pfn),
+						prot, memcache, vcpu);
+		}
+		else {
+			ret = kvm_pgtable_stage2_map(pgt, fault_ipa, vma_pagesize,
+						__pfn_to_phys(pfn), prot,
+						memcache);
+		}
 	}
 
 	/* Mark the page dirty only if the fault is handled successfully */
