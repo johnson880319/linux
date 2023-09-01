@@ -138,6 +138,10 @@ KVM_NVHE_ALIAS(kvm_protected_mode_initialized);
 KVM_NVHE_ALIAS(rr_log);
 KVM_NVHE_ALIAS(rr_memory_cow);
 KVM_NVHE_ALIAS(rr_check_cow_page);
+KVM_NVHE_ALIAS(__kmalloc);
+KVM_NVHE_ALIAS(kfree);
+KVM_NVHE_ALIAS(_printk);
+// KVM_NVHE_ALIAS(user_mem_abort);
 
 #endif /* CONFIG_KVM */
 

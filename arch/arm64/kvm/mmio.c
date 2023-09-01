@@ -5,7 +5,9 @@
  */
 
 #include <linux/kvm_host.h>
+#include <linux/record_replay.h>
 #include <asm/kvm_emulate.h>
+#include <asm/logger.h>
 #include <trace/events/kvm.h>
 
 #include "trace.h"
@@ -109,6 +111,13 @@ int kvm_handle_mmio_return(struct kvm_vcpu *vcpu)
 			       &data);
 		data = vcpu_data_host_to_guest(vcpu, data, len);
 		vcpu_set_reg(vcpu, kvm_vcpu_dabt_get_rd(vcpu), data);
+
+		if (vcpu->rr_info.enabled) {
+			// RR_LOG("3, %d %llx %llx %llx\n", vcpu->vcpu_id,
+			// 	vcpu->arch.ctxt.regs.sp,
+			// 	vcpu->arch.ctxt.regs.pc,
+			// 	vcpu->arch.ctxt.regs.pstate);
+		}
 	}
 
 	/*

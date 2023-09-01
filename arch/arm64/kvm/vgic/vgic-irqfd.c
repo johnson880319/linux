@@ -7,6 +7,7 @@
 #include <linux/kvm_host.h>
 #include <trace/events/kvm.h>
 #include <kvm/arm_vgic.h>
+#include <asm/logger.h>
 #include "vgic.h"
 
 /**
@@ -23,6 +24,7 @@ static int vgic_irqfd_set_irq(struct kvm_kernel_irq_routing_entry *e,
 
 	if (!vgic_valid_spi(kvm, spi_id))
 		return -EINVAL;
+	RR_DLOG(INIT, "DEBUG: received IRQ with INTID=%d", irq_source_id);
 	return kvm_vgic_inject_irq(kvm, 0, spi_id, level, NULL);
 }
 

@@ -891,6 +891,7 @@ struct kvm_ppc_resize_hpt {
 
 struct kvm_rr_ctrl {
 	__u16 enabled;
+	__u16 replay_enabled;
 	__u16 ctrl;
 	__u32 timer_value;
 };

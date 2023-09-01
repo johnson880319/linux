@@ -770,12 +770,12 @@ static bool kvm_vcpu_exit_request(struct kvm_vcpu *vcpu, int *ret)
 int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 {
 	struct kvm_run *run = vcpu->run;
-	int ret;
+	int ret, r;
 	struct rr_vcpu_info *vrr_info = &vcpu->rr_info;
-	s32 timer_val;
-	kvm_pte_t pte;
-	u32 level;
-	int done = 0;
+	// s32 timer_val;
+	// kvm_pte_t pte;
+	// u32 level;
+	// int done = 0;
 
 	if (unlikely(!kvm_vcpu_initialized(vcpu)))
 		return -ENOEXEC;
@@ -802,6 +802,7 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 	ret = 1;
 	run->exit_reason = KVM_EXIT_UNKNOWN;
 	while (ret > 0) {
+restart:
 		/*
 		 * Check conditions before entering the guest
 		 */
@@ -821,12 +822,6 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 		// 		TIMER_PTIMER, TIMER_REG_TVAL);
 		// 	RR_DLOG(INIT, "vcpu=%d current TVAL=%d",
 		// 	vcpu->vcpu_id, timer_val);
-		// 	if (timer_val < 0 && !done) {
-		// 		rr_kvm_pgtable_get_leaf(vcpu->arch.hw_mmu->pgt,
-		// 			(*(u64 *)__va(vcpu->arch.hw_mmu->pgd_phys)),
-		// 			&pte, &level);
-		// 		done = 1;
-		// 	}
 		// }
 
 		if (rr_check_request(RR_REQ_CHECKPOINT, vrr_info)) {
@@ -834,6 +829,22 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 			* (unload the fpu).
 			*/
 			rr_vcpu_checkpoint(vcpu);
+		}
+
+		/* Need to commit memory here.
+		* Note: we should NOT clear RR_REQ_COMMIT_AGAIN here because it may
+		* fail at the first try to enter guest and we need to commit memory
+		* again until it enters guest.
+		*/
+		if (rr_check_request(RR_REQ_COMMIT_AGAIN, vrr_info)) {
+			rr_commit_again(vcpu);
+		}
+
+		/* Check if we need to wait other vcpus to finish commit/rollback
+		* memory before we enter guest.
+		*/
+		if (rr_check_request(RR_REQ_POST_CHECK, vrr_info)) {
+			rr_post_check(vcpu);
 		}
 
 		/*
@@ -867,6 +878,11 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 			local_irq_enable();
 			preempt_enable();
 			continue;
+		}
+
+		if (vrr_info->tlb_flush) {
+			kvm_call_hyp(__kvm_tlb_flush_vmid, vcpu->arch.hw_mmu);
+			vrr_info->tlb_flush = false;
 		}
 
 		kvm_arm_setup_debug(vcpu);
@@ -956,6 +972,31 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 			 */
 			vcpu->arch.target = -1;
 			ret = ARM_EXCEPTION_IL;
+		}
+
+		if (vrr_info->enabled) {
+			// rr_trace_vm_exit(vcpu);
+			rr_clear_all_request(vrr_info);
+			r = rr_check_chunk(vcpu);
+			if (r == RR_CHUNK_ROLLBACK) {
+				/* Unload fpu from the hardware before we
+				* rollback fpu, or kvm may override the value
+				* we just rollback.
+				*/
+				// rr_put_guest_fpu(vcpu);
+				rr_vcpu_rollback(vcpu);
+				// rr_apic_reinsert_irq(vcpu);
+
+				if (unlikely(!rr_ctrl.enabled)) {
+					goto rr_disable;
+				}
+				goto restart;
+			}
+			if (unlikely(!rr_ctrl.enabled)) {
+rr_disable:
+				/* Only after commit or rollback can we disable it */
+				rr_vcpu_disable(vcpu);
+			}
 		}
 
 		ret = handle_exit(vcpu, ret);

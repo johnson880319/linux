@@ -11,6 +11,7 @@
 #include <linux/nospec.h>
 
 #include <asm/kvm_hyp.h>
+#include <asm/logger.h>
 
 #include "vgic.h"
 
@@ -407,6 +408,10 @@ retry:
 	vgic_get_irq_kref(irq);
 	list_add_tail(&irq->ap_list, &vcpu->arch.vgic_cpu.ap_list_head);
 	irq->vcpu = vcpu;
+
+	if(vcpu->rr_info.enabled) {
+		RR_LOG("4 vcpu=%d INSERTED AN INTERRUPT \n", vcpu->vcpu_id);
+	}
 
 	raw_spin_unlock(&irq->irq_lock);
 	raw_spin_unlock_irqrestore(&vcpu->arch.vgic_cpu.ap_list_lock, flags);

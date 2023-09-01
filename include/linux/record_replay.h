@@ -54,8 +54,8 @@ typedef u64 kvm_pte_t;
 #define RR_CHUNK_STATE_BUSY		1
 #define RR_CHUNK_STATE_FINISHED		2
 
-/* Use bit 52 in spte to indicate this page has been cow */
-#define RR_PT_COW_TAG			(1ULL << 52)
+/* Use bit 48 in spte to indicate this page has been cow */
+#define RR_PT_COW_TAG			(1ULL << 48)
 
 struct rr_chunk_info {
 	struct list_head link;
@@ -179,6 +179,7 @@ struct rr_cow_page {
 	u64 *ptep;	/*Pointer of the spte that references this pa */
 	u64 chunk_num;	/* val of nr_chunk when added to holding_pages */
 	int state;
+	struct kvm_pgtable_mm_ops *mm_ops;
 };
 
 void rr_init(struct rr_ops *rr_ops);

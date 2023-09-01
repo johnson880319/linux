@@ -320,17 +320,13 @@ static int rr_leaf_walker(u64 addr, u64 end, u32 level, kvm_pte_t *ptep,
 	pte_t pte = __pte(kpte);
 
 	if(kvm_pte_valid(kpte)) {
-		// __rr_set_AD_bit(vcpu, pte, addr);
+		if (!pte_young(pte)) {
+			re_set_bit(addr, &vcpu->rr_info.access_bitmap);
+			if (pte_dirty(pte)) {
+				re_set_bit(addr, &vcpu->rr_info.dirty_bitmap);
+			}
+		}
 	}
-
-	// if (pte_young(pte)) {
-	// 	RR_DLOG(MMU, "pte:%llu is young", *ptep);
-	// 	return 0;
-	// }
-	// if (pte_dirty(pte)) {
-	// 	RR_DLOG(MMU, "pte:%llu is dirty", *ptep);
-	// }
-
 
 	return 0;
 }
