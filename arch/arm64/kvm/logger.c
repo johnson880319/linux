@@ -15,6 +15,7 @@
 #include <linux/seq_file.h>
 #include <linux/types.h>
 #include <linux/device.h>
+#include <asm/logger.h>
 #include "logger_internal.h"
 
 int logger_major = LOGGER_MAJOR;          //device major number
@@ -89,7 +90,7 @@ ssize_t logger_read(struct file *filp, char __user *buf, size_t count,
 
 				spin_lock(&dev->dev_lock);
 			}
-			
+
 			//has more than one page data
 			goto out;
 
@@ -101,7 +102,7 @@ ssize_t logger_read(struct file *filp, char __user *buf, size_t count,
 			goto out;
 		}
 	}
-	
+
 flushed:
 	//maybe some problems here
 	//spin_lock vs sleep
@@ -120,7 +121,7 @@ flushed:
 	if(copy_to_user(buf, tmp, ret)) {
 		return -EFAULT;
 	}
-	
+
 	spin_lock(&dev->dev_lock);
 	//data has been flushed out
 	//delete the last page
@@ -195,7 +196,7 @@ static void logger_decode_logs_from_buf(struct logger_dev *dev, const char *buf,
 	while (cur < size) {
 		new_log = logger_decode_one_log(buf, size, &cur);
 		if (new_log) {
-			sscanf(cur_log->data, "%d %d", &type, &vcpu_id);
+			sscanf(cur_log->data, "%d, %d", &type, &vcpu_id);
 			if (vcpu_id >= LOGGER_MAX_VCPUS) {
 				pr_err("error: log's vcpu_id %d is larger than "
 				       "LOGGER_MAX_VCPUS\n", vcpu_id);
@@ -204,12 +205,20 @@ static void logger_decode_logs_from_buf(struct logger_dev *dev, const char *buf,
 				continue;
 			}
 			plog = &dev->vcpu_logs[vcpu_id];
-			spin_lock(&plog->log_lock);
-			list_add_tail(&cur_log->link, &plog->logs);
-			if (plog->nr_logs++ == 0)
-				wake_up_interruptible(&plog->queue);
-			spin_unlock(&plog->log_lock);
-			cur_log = NULL;
+			if (plog) {
+				spin_lock(&plog->log_lock);
+				list_add_tail(&cur_log->link, &plog->logs);
+				if (plog->nr_logs++ == 0)
+					wake_up_interruptible(&plog->queue);
+				spin_unlock(&plog->log_lock);
+				cur_log = NULL;
+			}
+			else {
+				pr_err("vcpu_logs[%d] not found!!!", vcpu_id);
+				kmem_cache_free(log_cache, cur_log);
+				cur_log = NULL;
+				break;				
+			}
 		}
 	}
 }
@@ -304,7 +313,7 @@ long logger_ioctl(struct file *filp,
 
 		case LOGGER_SET_STATE:
 			/* Set the state of logger */
-			if (arg != NORMAL && arg != INPUT) {
+			if (arg != NORMAL && arg != INPUT && arg != FINISHED) {
 				return -EINVAL;
 			}
 			spin_lock(&dev->dev_lock);
@@ -589,7 +598,7 @@ void logger_cleanup(void)
 		remove_proc_entry("logger", NULL);   //remove the /proc/logger at first
 
 	cdev_del(&logger_dev.cdev);
-	
+
 	spin_lock(&logger_dev.dev_lock);
 
 	logger_trim();
@@ -887,7 +896,7 @@ int number(char **buf, char **end, unsigned long long num,
 		}else if(spec.flags & SPACE) {
 			sign = ' ';
 			spec.field_width--;
-		} 
+		}
 	}
 	if(need_pfx) {
 		if(spec.base == 16)
@@ -1199,7 +1208,7 @@ qualifier:
 	else if(spec->qualifier == 'l') {
 		if(spec->flags & SIGN)
 			spec->type = FORMAT_TYPE_LONG;
-		else 
+		else
 			spec->type = FORMAT_TYPE_ULONG;
 	}else if(_tolower(spec->qualifier) == 'z') {
 		spec->type = FORMAT_TYPE_SIZE_T;
@@ -1208,17 +1217,17 @@ qualifier:
 	}else if(spec->qualifier == 'H') {
 		if(spec->flags & SIGN)
 			spec->type = FORMAT_TYPE_BYTE;
-		else 
+		else
 			spec->type = FORMAT_TYPE_UBYTE;
 	}else if(spec->qualifier == 'h') {
 		if(spec->flags & SIGN)
 			spec->type = FORMAT_TYPE_SHORT;
-		else 
+		else
 			spec->type = FORMAT_TYPE_USHORT;
 	} else {
 		if(spec->flags & SIGN)
 			spec->type = FORMAT_TYPE_INT;
-		else 
+		else
 			spec->type = FORMAT_TYPE_UINT;
 	}
 	return ++fmt - start;
@@ -1247,7 +1256,7 @@ static int __print_record(const char* fmt, va_list args)
 		tlen = sprintf(tbuf, "[%5lu.%06lu] ", (unsigned long)t, nanosec_rem / 1000);
 
 		for(i = 0; i < tlen; ++i) {
-			if(unlikely(*str >= *end)) 
+			if(unlikely(*str >= *end))
 				logger_alloc_page();
 			**str = tbuf[i];
 			++(*str);
@@ -1282,7 +1291,7 @@ static int __print_record(const char* fmt, va_list args)
 
 			}
 
-			case FORMAT_TYPE_WIDTH: 
+			case FORMAT_TYPE_WIDTH:
 				spec.field_width = va_arg(args, int);
 				break;
 
@@ -1344,7 +1353,7 @@ static int __print_record(const char* fmt, va_list args)
 				**str = '%';
 				++(*str);
 				++length;
-				
+
 				break;
 
 			case FORMAT_TYPE_INVALID:
@@ -1457,11 +1466,11 @@ static int __print_record_buf(const unsigned char* buf, int len)
 
 int rr_log(const char* fmt, ...)
 {
-	va_list args;  
-	int r; 
+	va_list args;
+	int r;
 
 	va_start(args, fmt);
-	
+
 	spin_lock(&logger_dev.dev_lock);
 	if(logger_dev.state != NORMAL) {
 		r = -1;
@@ -1477,7 +1486,7 @@ int rr_log(const char* fmt, ...)
 out:
 	spin_unlock(&logger_dev.dev_lock);
 	va_end(args);
-	return r;   
+	return r;
 }
 EXPORT_SYMBOL_GPL(rr_log);
 

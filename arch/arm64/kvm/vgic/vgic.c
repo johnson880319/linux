@@ -409,15 +409,17 @@ retry:
 	list_add_tail(&irq->ap_list, &vcpu->arch.vgic_cpu.ap_list_head);
 	irq->vcpu = vcpu;
 
-	if(vcpu->rr_info.enabled) {
-		RR_LOG("4 vcpu=%d INSERTED AN INTERRUPT \n", vcpu->vcpu_id);
-	}
-
 	raw_spin_unlock(&irq->irq_lock);
 	raw_spin_unlock_irqrestore(&vcpu->arch.vgic_cpu.ap_list_lock, flags);
 
 	kvm_make_request(KVM_REQ_IRQ_PENDING, vcpu);
 	kvm_vcpu_kick(vcpu);
+
+	if(vcpu->rr_info.enabled && !rr_ctrl.replay_enabled) {
+		RR_LOG("4, %d %llu \n", vcpu->vcpu_id,
+			kvm_arm_timer_read_sysreg(vcpu, TIMER_VTIMER, TIMER_REG_CNT));
+		vcpu->rr_info.has_interrupt = true;
+	}
 
 	return true;
 }

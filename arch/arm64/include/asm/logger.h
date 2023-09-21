@@ -3,6 +3,14 @@
 #include <linux/printk.h>
 #include <asm/bug.h>
 
+#define LOGGER_LOG_MAX_LEN	256
+
+struct logger_log {
+	char data[LOGGER_LOG_MAX_LEN];
+	int len;
+	struct list_head link;
+};
+
 extern int rr_log(const char* fmt, ...);
 extern int rr_log_buf(const unsigned char *buf, int len);
 extern struct logger_log *rr_fetch_log(int vcpu_id);

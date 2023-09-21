@@ -15,17 +15,11 @@
 #define PRINT_TIME 0
 
 #define LOGGER_MAX_VCPUS	16
-#define LOGGER_MAX_LOGS		1024
+#define LOGGER_MAX_LOGS		1048576
 
 #define LOGGER_LOG_MAX_LEN	256
 
 /* Define your own log format here */
-struct logger_log {
-	char data[LOGGER_LOG_MAX_LEN];
-	int len;
-	struct list_head link;
-};
-
 struct vcpu_log {
 	spinlock_t log_lock;
 	struct list_head logs;
@@ -65,6 +59,7 @@ struct logger_dev {
 #define NORMAL 0
 #define FLUSHED 1
 #define INPUT	2
+#define FINISHED 3
 
 #define LOGGER_IOC_MAGIC 0XAF
 #define LOGGER_FLUSH	_IO(LOGGER_IOC_MAGIC, 0)

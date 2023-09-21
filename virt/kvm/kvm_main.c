@@ -4693,11 +4693,11 @@ static long kvm_dev_ioctl(struct file *filp,
 			if (rr_ctrl.enabled == 0) {
 				rr_ctrl = rr_ctrl_user;
 				printk(KERN_INFO "KVM_RR_CTRL, enabled with "
-				       "ctrl: 0x%x, timer_value: %d\n",
-				       rr_ctrl.ctrl, rr_ctrl.timer_value);
+				       "ctrl: 0x%x, replay_enabled: %x, timer_value: %d\n",
+				       rr_ctrl.ctrl, rr_ctrl.replay_enabled, rr_ctrl.timer_value);
 				RR_DLOG(INIT, "KVM_RR_CTRL, enabled with "
-					"ctrl: 0x%x, timer_value: %d",
-					rr_ctrl.ctrl, rr_ctrl.timer_value);
+					"ctrl: 0x%x, replay_enabled: %x, timer_value: %d",
+					rr_ctrl.ctrl, rr_ctrl.replay_enabled, rr_ctrl.timer_value);
 			} else
 				r = -EBUSY;
 		}

@@ -91,6 +91,7 @@ struct rr_vcpu_info {
 	struct list_head events_list;
 	struct mutex events_list_lock;
 	bool commit_again_clean;
+	bool has_interrupt;
 	/* Bitmaps */
 	struct region_bitmap access_bitmap;
 	struct region_bitmap dirty_bitmap;

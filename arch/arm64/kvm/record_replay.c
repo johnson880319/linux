@@ -353,16 +353,16 @@ int rr_vcpu_enable(struct kvm_vcpu *vcpu)
 	printk(KERN_INFO "vcpu=%d enabled\n", vcpu->vcpu_id);
 	if (vcpu->rr_info.is_master) {
 		RR_DLOG(INIT, "vcpu=%d current TVAL=%d", vcpu->vcpu_id,
-			kvm_arm_timer_read_sysreg(vcpu, TIMER_PTIMER, TIMER_REG_TVAL));
+			kvm_arm_timer_read_sysreg(vcpu, TIMER_VTIMER, TIMER_REG_TVAL));
 		RR_DLOG(INIT, "vcpu=%d timer_value: %llu",
 			vcpu->vcpu_id, vcpu->rr_info.timer_value);
 		RR_DLOG(INIT, "vcpu=%d Setting TVAL to timer_value:",
 			vcpu->vcpu_id);
-		kvm_arm_timer_write_sysreg(vcpu, TIMER_PTIMER,
+		kvm_arm_timer_write_sysreg(vcpu, TIMER_VTIMER,
 			TIMER_REG_TVAL, vcpu->rr_info.timer_value);
 		RR_DLOG(INIT, "vcpu=%d current TVAL=%d",
 			vcpu->vcpu_id, kvm_arm_timer_read_sysreg(vcpu,
-			TIMER_PTIMER, TIMER_REG_TVAL));
+			TIMER_VTIMER, TIMER_REG_TVAL));
 	}
 	return ret;
 }
@@ -1416,16 +1416,17 @@ static void rr_log_chunk(struct kvm_vcpu *vcpu)
 	struct rr_kvm_info *krr_info = &vcpu->kvm->rr_info;
 	// unsigned long rcx, rip;
 
-	if (vcpu->vcpu_id == krr_info->last_record_vcpu)
-		return;
+	// if (vcpu->vcpu_id == krr_info->last_record_vcpu)
+	// 	return;
 	// rcx = kvm_register_read(vcpu, VCPU_REGS_RCX);
 	// rip = vmcs_readl(GUEST_RIP);
 	krr_info->last_record_vcpu = vcpu->vcpu_id;
 	// /* get_random_bytes(&bc, sizeof(unsigned int)); */
 	// /* The last argument should be the bc */
 	// RR_LOG("1 %d %lx %lx %x\n", vcpu->vcpu_id, rip, rcx, 0);
-	RR_LOG("1, %d %lx %lx %lx\n", vcpu->vcpu_id, vcpu->arch.ctxt.regs.sp,
-		vcpu->arch.ctxt.regs.pc, vcpu->arch.ctxt.regs.pstate);
+	RR_LOG("1, %d %lx %lx %lx %llu\n", vcpu->vcpu_id, vcpu->arch.ctxt.regs.sp,
+		vcpu->arch.ctxt.regs.pc, vcpu->arch.ctxt.regs.pstate,
+		kvm_arm_timer_read_sysreg(vcpu, TIMER_VTIMER, TIMER_REG_CNT));
 	// RR_DLOG(GEN, "log_chunk");
 }
 
@@ -1486,7 +1487,7 @@ static int rr_ape_check_chunk(struct kvm_vcpu *vcpu)
 
 	if (commit) {
 		// RR_DLOG(INIT, "entering commit, TVAL=%d",
-		// 	kvm_arm_timer_read_sysreg(vcpu, TIMER_PTIMER, TIMER_REG_TVAL));
+		// 	kvm_arm_timer_read_sysreg(vcpu, TIMER_VTIMER, TIMER_REG_TVAL));
 		if (vrr_info->exclusive_commit) {
 			/* Exclusive commit state */
 			vrr_info->exclusive_commit = 0;
@@ -1556,10 +1557,11 @@ rollback:
 	re_bitmap_clear(vrr_info->private_cb);
 
 	// vmcs_write32(VMX_PREEMPTION_TIMER_VALUE, vrr_info->timer_value);
-	kvm_arm_timer_write_sysreg(vcpu, TIMER_PTIMER,
+	kvm_arm_timer_write_sysreg(vcpu, TIMER_VTIMER,
 		TIMER_REG_TVAL, vrr_info->timer_value);
 out:
 	vrr_info->tlb_flush = true;
+	vrr_info->has_interrupt = false;
 	return commit;
 }
 
@@ -1568,32 +1570,41 @@ int rr_check_chunk(struct kvm_vcpu *vcpu)
 	unsigned long fault_status;
 	struct rr_vcpu_info *vrr_info = &vcpu->rr_info;
 	int ret;
+	struct logger_log *log = NULL;
 
 	fault_status = kvm_vcpu_trap_get_fault_type(vcpu);
 
 	#ifdef RR_EARLY_CHECK
 	if (fault_status == FSC_FAULT) {
-		s32 timer_val = kvm_arm_timer_read_sysreg(vcpu, TIMER_PTIMER,
+		s32 timer_val = kvm_arm_timer_read_sysreg(vcpu, TIMER_VTIMER,
 			TIMER_REG_TVAL);
-		if (timer_val < 0 || !list_empty(&vcpu->arch.vgic_cpu.ap_list_head)) {
+		if (timer_val < 0 || vcpu->rr_info.has_interrupt) {
 			fault_status = FSC_RR;
 		}
 	}
 	#endif
 	if (fault_status != FSC_FAULT) {
-		ret = rr_ape_check_chunk(vcpu);
-		if (ret == -1) {
-			RR_ERR("error: vcpu=%d rr_ape_check_chunk() returns -1",
-			       vcpu->vcpu_id);
-		} else if (ret == 1) {
-			rr_make_request(RR_REQ_COMMIT_AGAIN, vrr_info);
-			rr_make_request(RR_REQ_POST_CHECK, vrr_info);
-			rr_make_request(RR_REQ_CHECKPOINT, vrr_info);
-			vrr_info->commit_again_clean = true;
-			return RR_CHUNK_COMMIT;
-		} else {
-			rr_make_request(RR_REQ_POST_CHECK, vrr_info);
-			return RR_CHUNK_ROLLBACK;
+		if (!rr_ctrl.replay_enabled) {
+			ret = rr_ape_check_chunk(vcpu);
+			if (ret == -1) {
+				RR_ERR("error: vcpu=%d rr_ape_check_chunk() returns -1",
+					vcpu->vcpu_id);
+			} else if (ret == 1) {
+				rr_make_request(RR_REQ_COMMIT_AGAIN, vrr_info);
+				rr_make_request(RR_REQ_POST_CHECK, vrr_info);
+				rr_make_request(RR_REQ_CHECKPOINT, vrr_info);
+				vrr_info->commit_again_clean = true;
+				return RR_CHUNK_COMMIT;
+			} else {
+				rr_make_request(RR_REQ_POST_CHECK, vrr_info);
+				return RR_CHUNK_ROLLBACK;
+			}
+		}
+		else {
+			log = rr_fetch_log(vcpu->vcpu_id);
+			if (log) {
+				pr_info("log: %s\n", log->data);
+			}
 		}
 	}
 
@@ -1775,7 +1786,7 @@ static void __rr_print_sta(struct kvm *kvm)
 		       temp);
 		temp = vcpu_it->rr_info.nr_chunk_rollback;
 		nr_chunk_rollback += temp;
-		RR_DLOG("vcpu=%d nr_chunk_rollback=%llu\n", vcpu_it->vcpu_id,
+		RR_DLOG(INIT, "vcpu=%d nr_chunk_rollback=%llu\n", vcpu_it->vcpu_id,
 		       temp);
 	}
 	RR_DLOG(INIT, "total nr_chunk_commit=%llu\n", nr_chunk_commit);
