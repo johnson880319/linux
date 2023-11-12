@@ -1,4 +1,5 @@
 #include <linux/record_replay.h>
+#include <linux/kvm.h>
 #include <linux/kvm_host.h>
 #include <linux/delay.h>
 #include <linux/bitfield.h>
@@ -1602,9 +1603,16 @@ int rr_check_chunk(struct kvm_vcpu *vcpu)
 		}
 		else {
 			log = rr_fetch_log(vcpu->vcpu_id);
-			if (log) {
+			if (log != NULL) {
 				pr_info("log: %s\n", log->data);
+				vcpu->run->exit_reason = KVM_EXIT_DEBUG;
+				kvm_arm_timer_write_sysreg(vcpu, TIMER_VTIMER,
+					TIMER_REG_TVAL, vrr_info->timer_value);
+			} else {
+				pr_info("LOG REPLAY DONE!!!\n");
+				vcpu->run->exit_reason = KVM_EXIT_DCR;
 			}
+			return RR_REPLAY_EXIT;
 		}
 	}
 

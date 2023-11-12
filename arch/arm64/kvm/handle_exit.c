@@ -257,6 +257,42 @@ int handle_exit(struct kvm_vcpu *vcpu, int exception_index)
 	}
 }
 
+int handle_exit_rr(struct kvm_vcpu *vcpu, int exception_index)
+{
+	struct kvm_run *run = vcpu->run;
+
+	exception_index = ARM_EXCEPTION_CODE(exception_index);
+
+	switch (exception_index) {
+	case ARM_EXCEPTION_IRQ:
+		return 0;
+	case ARM_EXCEPTION_EL1_SERROR:
+		return 0;
+	case ARM_EXCEPTION_TRAP:
+		handle_trap_exceptions(vcpu);
+		return 0;
+	case ARM_EXCEPTION_HYP_GONE:
+		/*
+		 * EL2 has been reset to the hyp-stub. This happens when a guest
+		 * is pre-empted by kvm_reboot()'s shutdown call.
+		 */
+		run->exit_reason = KVM_EXIT_FAIL_ENTRY;
+		return 0;
+	case ARM_EXCEPTION_IL:
+		/*
+		 * We attempted an illegal exception return.  Guest state must
+		 * have been corrupted somehow.  Give up.
+		 */
+		run->exit_reason = KVM_EXIT_FAIL_ENTRY;
+		return -EINVAL;
+	default:
+		kvm_pr_unimpl("Unsupported exception type: %d",
+			      exception_index);
+		run->exit_reason = KVM_EXIT_INTERNAL_ERROR;
+		return 0;
+	}
+}
+
 /* For exit types that need handling before we can be preempted */
 void handle_exit_early(struct kvm_vcpu *vcpu, int exception_index)
 {

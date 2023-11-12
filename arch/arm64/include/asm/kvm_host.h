@@ -654,6 +654,7 @@ void kvm_arm_resume_guest(struct kvm *kvm);
 void force_vm_exit(const cpumask_t *mask);
 
 int handle_exit(struct kvm_vcpu *vcpu, int exception_index);
+int handle_exit_rr(struct kvm_vcpu *vcpu, int exception_index);
 void handle_exit_early(struct kvm_vcpu *vcpu, int exception_index);
 
 int kvm_handle_cp14_load_store(struct kvm_vcpu *vcpu);

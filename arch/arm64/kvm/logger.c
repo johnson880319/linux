@@ -2,6 +2,7 @@
 #include <linux/moduleparam.h>
 #include <linux/init.h>
 #include <linux/kernel.h>	/* printk() */
+#include <linux/kvm_host.h>
 #include <linux/slab.h>		/* kmalloc() */
 #include <linux/fs.h>		/* everything... */
 #include <linux/errno.h>	/* error codes */
@@ -1524,16 +1525,22 @@ struct logger_log *rr_fetch_log(int vcpu_id)
 	}
 	plog = &logger_dev.vcpu_logs[vcpu_id];
 	spin_lock(&plog->log_lock);
-	while (plog->nr_logs == 0) {
-		/* We need to wait for a new log */
-		if (unlikely(logger_dev.state == FLUSHED))
-			goto out;
+	// while (plog->nr_logs == 0) {
+	// 	/* We need to wait for a new log */
+	// 	if (unlikely(logger_dev.state == FLUSHED))
+	// 		goto out;
 
-		spin_unlock(&plog->log_lock);
-		if (wait_event_interruptible(plog->queue, (plog->nr_logs > 0 ||
-					     logger_dev.state == FLUSHED)))
-			return NULL;
-		spin_lock(&plog->log_lock);
+	// 	spin_unlock(&plog->log_lock);
+	// 	if (wait_event_interruptible(plog->queue, (plog->nr_logs > 0 ||
+	// 				     logger_dev.state == FLUSHED)))
+	// 		return NULL;
+	// 	spin_lock(&plog->log_lock);
+	// }
+	pr_info("nr_logs: %d\n", plog->nr_logs);
+	if (plog->nr_logs == 0) {
+		pr_info("rr_fetch_log: no logs\n");
+		rr_ctrl.enabled = 0;
+		goto out;
 	}
 	ret = list_first_entry(&plog->logs, struct logger_log, link);
 	list_del(&ret->link);

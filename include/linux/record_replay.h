@@ -44,6 +44,8 @@ typedef u64 kvm_pte_t;
 #define RR_CHUNK_COMMIT			0
 #define RR_CHUNK_ROLLBACK		1
 #define RR_CHUNK_SKIP			2
+#define RR_REPLAY_EXIT			3
+#define RR_REPLAY_OFF			4
 
 #define RR_REQ_CHECKPOINT		0
 #define RR_REQ_COMMIT_AGAIN		1

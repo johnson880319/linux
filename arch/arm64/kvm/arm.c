@@ -999,7 +999,10 @@ rr_disable:
 			}
 		}
 
-		ret = handle_exit(vcpu, ret);
+		if (r == RR_REPLAY_EXIT)
+			ret = handle_exit_rr(vcpu, ret);
+		else
+			ret = handle_exit(vcpu, ret);
 	}
 
 	/* Tell userspace about in-kernel device output levels */
